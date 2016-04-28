@@ -72,8 +72,22 @@ class NestedRestrictFeatureTests(APITestCase):
         self.assertEqual(set(response.data[0].keys()), {"id", "user"})
         self.assertEqual(set(response.data[0]["user"].keys()), {"id", "url", "username", "is_staff", "email"})
 
-    def test_nested(self):
+    def test_nested__all(self):
+        path = "/api/groups/?return_fields=user"
+        response = self.client.get(path, format="json")
+        self.assertEqual(response.status_code, status.HTTP_200_OK, msg=extract_error_message(response))
+        self.assertEqual(set(response.data[0].keys()), {"user"})
+        self.assertEqual(set(response.data[0]["user"].keys()), {"id", "url", "username", "is_staff", "email"})
+
+    def test_nested__all__with_noise(self):
         path = "/api/groups/?return_fields=user, user__id"
+        response = self.client.get(path, format="json")
+        self.assertEqual(response.status_code, status.HTTP_200_OK, msg=extract_error_message(response))
+        self.assertEqual(set(response.data[0].keys()), {"user"})
+        self.assertEqual(set(response.data[0]["user"].keys()), {"id", "url", "username", "is_staff", "email"})
+
+    def test_nested__specific(self):
+        path = "/api/groups/?return_fields=user__id"
         response = self.client.get(path, format="json")
         self.assertEqual(response.status_code, status.HTTP_200_OK, msg=extract_error_message(response))
         self.assertEqual(set(response.data[0].keys()), {"user"})
