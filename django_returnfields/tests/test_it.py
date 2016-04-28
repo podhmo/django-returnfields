@@ -9,7 +9,46 @@ def extract_error_message(response):
     return getattr(response, "data", None) or response.content
 
 
-class Test(APITestCase):
+class RestrictFeatureTests(APITestCase):
+    # see: ./url:UserViewSet.serializer_class
+
+    def setUp(self):
+        super().setUp()
+        self.login_user = User.objects.create_superuser('admin', 'myemail@test.com', '')
+        self.client.force_authenticate(self.login_user)
+
+    def test_restricted(self):
+        path = "/api/users/?return_fields=username,url"
+        response = self.client.get(path, format="json")
+        self.assertEqual(response.status_code, status.HTTP_200_OK, msg=extract_error_message(response))
+        self.assertEqual(set(response.data[0].keys()), {"url", "username"})
+
+    def test_restricted2(self):
+        path = "/api/users/?return_fields=username, url, is_staff"
+        response = self.client.get(path, format="json")
+        self.assertEqual(response.status_code, status.HTTP_200_OK, msg=extract_error_message(response))
+        self.assertEqual(set(response.data[0].keys()), {"url", "username", "is_staff"})
+
+    def test_restricted__invalid_names(self):
+        path = "/api/users/?return_fields=username, xxxx"
+        response = self.client.get(path, format="json")
+        self.assertEqual(response.status_code, status.HTTP_200_OK, msg=extract_error_message(response))
+        self.assertEqual(set(response.data[0].keys()), {"username"})
+
+    def test_restricted__another_name(self):
+        path = "/api/users2/?include=username"
+        response = self.client.get(path, format="json")
+        self.assertEqual(response.status_code, status.HTTP_200_OK, msg=extract_error_message(response))
+        self.assertEqual(set(response.data[0].keys()), {"username"})
+
+    def test_restricted__another_name__default_include_keys_are_ignored(self):
+        path = "/api/users2/?return_fields=username"
+        response = self.client.get(path, format="json")
+        self.assertEqual(response.status_code, status.HTTP_200_OK, msg=extract_error_message(response))
+        self.assertNotEqual(set(response.data[0].keys()), {"username"})
+
+
+class PlainActionTests(APITestCase):
     def setUp(self):
         super().setUp()
         self.login_user = User.objects.create_superuser('admin', 'myemail@test.com', '')
@@ -20,8 +59,9 @@ class Test(APITestCase):
         response = self.client.get(path, format="json")
         self.assertEqual(response.status_code, status.HTTP_200_OK, msg=extract_error_message(response))
         self.assertEqual(len(response.data), 1, msg=response.data)
+        self.assertEqual(set(response.data[0].keys()), {"url", "username", "is_staff", "email"})
 
-    def test_listing__with_another_user(self):
+    def test_listingwith_another_user(self):
         User.objects.create_user('another', 'myemail@test.com', '')
         path = "/api/users/"
         response = self.client.get(path, format="json")

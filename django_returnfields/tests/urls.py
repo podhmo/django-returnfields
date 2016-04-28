@@ -4,6 +4,9 @@ from django.contrib.staticfiles.urls import staticfiles_urlpatterns  # NOQA
 from rest_framework import routers, serializers, viewsets
 
 
+from django_returnfields import return_fields_serializer_factory, Restriction
+
+
 # Serializers define the API representation.
 class UserSerializer(serializers.ModelSerializer):
     class Meta:
@@ -14,11 +17,17 @@ class UserSerializer(serializers.ModelSerializer):
 # ViewSets define the view behavior.
 class UserViewSet(viewsets.ModelViewSet):
     queryset = User.objects.all()
-    serializer_class = UserSerializer
+    serializer_class = return_fields_serializer_factory(UserSerializer)
+
+
+class UserViewSet2(viewsets.ModelViewSet):
+    queryset = User.objects.all()
+    serializer_class = return_fields_serializer_factory(UserSerializer, restriction=Restriction(include_key="include"))
 
 # Routers provide an easy way of automatically determining the URL conf.
 router = routers.DefaultRouter()
 router.register(r'users', UserViewSet)
+router.register(r'users2', UserViewSet2)
 
 urlpatterns = [
     url(r'^api/', include(router.urls)),
