@@ -48,6 +48,38 @@ class RestrictFeatureTests(APITestCase):
         self.assertNotEqual(set(response.data[0].keys()), {"username"})
 
 
+class NestedRestrictFeatureTests(APITestCase):
+    # see: ./url:UserViewSet.serializer_class
+
+    def setUp(self):
+        super().setUp()
+        self.login_user = User.objects.create_superuser('admin', 'myemail@test.com', '')
+        from .models import Group
+        Group.objects.create(user=self.login_user, name="login-group")
+        self.client.force_authenticate(self.login_user)
+
+    def test_no_filtering(self):
+        path = "/api/groups/"
+        response = self.client.get(path, format="json")
+        self.assertEqual(response.status_code, status.HTTP_200_OK, msg=extract_error_message(response))
+        self.assertEqual(set(response.data[0].keys()), {"id", "user", "name"})
+        self.assertEqual(set(response.data[0]["user"].keys()), {"id", "url", "username", "is_staff", "email"})
+
+    def test_same_keys(self):
+        path = "/api/groups/?return_fields=user, id"
+        response = self.client.get(path, format="json")
+        self.assertEqual(response.status_code, status.HTTP_200_OK, msg=extract_error_message(response))
+        self.assertEqual(set(response.data[0].keys()), {"id", "user"})
+        self.assertEqual(set(response.data[0]["user"].keys()), {"id", "url", "username", "is_staff", "email"})
+
+    def test_nested(self):
+        path = "/api/groups/?return_fields=user, user__id"
+        response = self.client.get(path, format="json")
+        self.assertEqual(response.status_code, status.HTTP_200_OK, msg=extract_error_message(response))
+        self.assertEqual(set(response.data[0].keys()), {"user"})
+        self.assertEqual(set(response.data[0]["user"].keys()), {"id"})
+
+
 class PlainCRUDActionTests(APITestCase):
     def setUp(self):
         super().setUp()
@@ -59,7 +91,7 @@ class PlainCRUDActionTests(APITestCase):
         response = self.client.get(path, format="json")
         self.assertEqual(response.status_code, status.HTTP_200_OK, msg=extract_error_message(response))
         self.assertEqual(len(response.data), 1, msg=response.data)
-        self.assertEqual(set(response.data[0].keys()), {"url", "username", "is_staff", "email"})
+        self.assertEqual(set(response.data[0].keys()), {"id", "url", "username", "is_staff", "email"})
 
     def test_listingwith_another_user(self):
         User.objects.create_user('another', 'myemail@test.com', '')
