@@ -12,7 +12,7 @@ INSTALLED_APPS = [
     'django.contrib.contenttypes',
     'django.contrib.staticfiles',
     "rest_framework",
-    __name__,
+    'django_returnfields.tests',
 ]
 MIDDLEWARE_CLASSES = (
     'django.middleware.common.CommonMiddleware',
