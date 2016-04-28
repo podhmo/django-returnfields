@@ -2,9 +2,9 @@
 
 import os
 import sys
-
-
 from setuptools import setup, find_packages
+from setuptools.command.test import test as TestCommand
+
 here = os.path.abspath(os.path.dirname(__file__))
 try:
     with open(os.path.join(here, 'README.rst')) as f:
@@ -29,6 +29,24 @@ tests_require = [
 testing_extras = tests_require + [
 ]
 
+
+class MyTest(TestCommand):
+    def run_tests(self):
+        import os
+        if "DJANGO_SETTINGS_MODULE" not in os.environ:
+            os.environ["DJANGO_SETTINGS_MODULE"] = "django_returnfields.tests.settings"
+        from django.test.utils import get_runner
+        import django
+        from django.apps import apps
+        django.setup()
+        for config in apps.get_app_configs():
+            config.models_module = __name__
+        from django.conf import settings
+        factory = get_runner(settings)
+        test_runner = factory()
+        return test_runner.run_tests(["django_returnfields.tests"])
+
+
 setup(name='django-returnfields',
       version='0.0',
       description='adding restriction of your api\'s return fields, in restframework',
@@ -50,6 +68,7 @@ setup(name='django-returnfields',
           'docs': docs_extras,
       },
       tests_require=tests_require,
-      test_suite="django_returnfields.tests",
+      test_suite="django_returnfields.tests",  # dummy
+      cmdclass={"test": MyTest},
       entry_points="""
 """)
