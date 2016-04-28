@@ -48,7 +48,7 @@ class RestrictFeatureTests(APITestCase):
         self.assertNotEqual(set(response.data[0].keys()), {"username"})
 
 
-class PlainActionTests(APITestCase):
+class PlainCRUDActionTests(APITestCase):
     def setUp(self):
         super().setUp()
         self.login_user = User.objects.create_superuser('admin', 'myemail@test.com', '')

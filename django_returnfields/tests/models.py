@@ -1,11 +1,8 @@
 # -*- coding:utf-8 -*-
 from django.db import models
+from django.contrib.auth.models import User
 
 
-# class Subject(models.Model):
-#     name = models.CharField(max_length=32, default="foo", blank=False)
-
-
-# class Comment(models.Model):
-#     subject = models.ForeignKey(Subject, null=False)
-#     content = models.TextField(default="")
+class Group(models.Model):
+    name = models.CharField(max_length=255, default="", null=False)
+    user = models.ForeignKey(User, null=False)
