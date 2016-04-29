@@ -17,7 +17,7 @@ class UserViewSet2(viewsets.ModelViewSet):
     queryset = User.objects.all()
     serializer_class = serializer_factory(
         serializers.UserSerializer,
-        restriction=Restriction(include_key="include"))
+        restriction=Restriction(include_key="include", exclude_key="exclude"))
 
 
 class SkillUserViewSet(viewsets.ModelViewSet):

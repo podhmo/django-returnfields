@@ -1,9 +1,10 @@
 # -*- coding:utf-8 -*-
 from collections import OrderedDict
 
+# TODO: see settings
 INCLUDE_KEY = "return_fields"
 EXCLUDE_KEY = "skip_fields"
-PATH_KEY = "_drf__path"  # {name: string, return_fields: string[], exclude: string[]}[]
+PATH_KEY = "_drf__path"  # {name: string, return_fields: string[], skip_fields: string[]}[]
 
 # xxx
 ALL = ""
@@ -16,6 +17,10 @@ def truncate_for_child(s, prefix, field_name):
         return ALL
     else:
         return s
+
+
+def is_already_upgraded(cls):
+    return hasattr(cls, "to_restricted_fields")
 
 
 class Restriction(object):
@@ -102,6 +107,9 @@ def serializer_factory(serializer_class, restriction=Restriction(include_key=INC
     k = (serializer_class, False, restriction.__hash__())
     if k in _cache:
         return _cache[k]
+    if is_already_upgraded(serializer_class):
+        _cache[k] = serializer_class
+        return serializer_class
 
     class ReturnFieldsSerializer(serializer_class):
         # override
@@ -134,6 +142,9 @@ def list_serializer_factory(serializer_class, restriction=Restriction(include_ke
     k = (serializer_class, True, restriction.__hash__())
     if k in _cache:
         return _cache[k]
+    if is_already_upgraded(serializer_class):
+        _cache[k] = serializer_class
+        return serializer_class
 
     class ReturnFieldsListSerializer(serializer_class):
         # override
@@ -157,5 +168,5 @@ def upgrade_member_classes(serializer_class, restriction):
             field.child.__class__ = serializer_factory(field.child.__class__, restriction)
             field.__class__ = list_serializer_factory(field.__class__, restriction)
         # serializer but not return fields serializer
-        elif hasattr(field, "_declared_fields") and not hasattr(field, "to_restricted_fields"):
+        elif hasattr(field, "_declared_fields") and not is_already_upgraded(field):
             field.__class__ = serializer_factory(field.__class__, restriction)
