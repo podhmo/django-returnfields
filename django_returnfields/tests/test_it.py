@@ -13,7 +13,7 @@ class RestrictFeatureTests(APITestCase):
     # see: ./url:UserViewSet.serializer_class
 
     def setUp(self):
-        super().setUp()
+        super(RestrictFeatureTests, self).setUp()
         self.login_user = User.objects.create_superuser('admin', 'myemail@test.com', '')
         self.client.force_authenticate(self.login_user)
 
@@ -58,7 +58,7 @@ class NestedRestrictFeatureTests(APITestCase):
     # see: ./url:UserViewSet.serializer_class
 
     def setUp(self):
-        super().setUp()
+        super(NestedRestrictFeatureTests, self).setUp()
         self.login_user = User.objects.create_superuser('admin', 'myemail@test.com', '')
         from .models import Skill
         Skill.objects.create(user=self.login_user, name="magic")
@@ -124,7 +124,7 @@ class NestedRestrictFeatureTests(APITestCase):
 
 class PlainCRUDActionTests(APITestCase):
     def setUp(self):
-        super().setUp()
+        super(PlainCRUDActionTests, self).setUp()
         self.login_user = User.objects.create_superuser('admin', 'myemail@test.com', '')
         self.client.force_authenticate(self.login_user)
 
