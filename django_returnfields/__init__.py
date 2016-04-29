@@ -5,12 +5,16 @@ INCLUDE_KEY = "return_fields"
 EXCLUDE_KEY = "exclude"
 PATH_KEY = "_drf__path"  # {name: string, return_fields: string[], exclude: string[]}[]
 
+# xxx
+ALL = ""
+
 
 class Restriction(object):
     def __init__(self, include_key=INCLUDE_KEY, exclude_key=EXCLUDE_KEY, path_key=PATH_KEY):
         self.include_key = include_key
         self.exclude_key = exclude_key
         self.path_key = path_key
+        self.active_check_keys = (self.include_key, self.exclude_key)
 
     def setup(self, serializer):
         if PATH_KEY not in serializer.context:
@@ -19,17 +23,20 @@ class Restriction(object):
                 "return_fields": self.parse_passed_values(serializer, self.include_key),
                 "exclude": self.parse_passed_values(serializer, self.exclude_key),
             }
+            if frame["exclude"] and not frame["return_fields"]:
+                frame["return_fields"] = [ALL]
             serializer.context[PATH_KEY] = [frame]
 
     def get_passed_values(self, serializer):
         return serializer.context["request"].GET
 
     def is_active(self, serializer):
-        return self.include_key in self.get_passed_values(serializer)
+        values = self.get_passed_values(serializer)
+        return any(k in values for k in self.active_check_keys)
 
     def parse_passed_values(self, serializer, key):
         fields_names_string = self.get_passed_values(serializer).get(key, "")
-        return [field_name.strip() for field_name in fields_names_string.split(",")]
+        return [field_name.strip() for field_name in fields_names_string.split(",") if field_name]
 
     def current_frame(self, serializer):
         return serializer.context[self.path_key][-1]
@@ -43,7 +50,7 @@ class Restriction(object):
     def to_restricted_fields(self, serializer, fields):
         frame = self.current_frame(serializer)
         return_fields = frame["return_fields"]
-        if "" in return_fields:
+        if ALL in return_fields:
             ret = fields
         else:
             # include filter
@@ -78,7 +85,7 @@ class Restriction(object):
 _cache = {}
 
 
-def serializer_factory(serializer_class, restriction=Restriction(INCLUDE_KEY, PATH_KEY)):
+def serializer_factory(serializer_class, restriction=Restriction(include_key=INCLUDE_KEY, exclude_key=EXCLUDE_KEY, path_key=PATH_KEY)):
     k = (serializer_class, False, restriction.__hash__())
     if k in _cache:
         return _cache[k]
@@ -110,7 +117,7 @@ def serializer_factory(serializer_class, restriction=Restriction(INCLUDE_KEY, PA
     return ReturnFieldsSerializer
 
 
-def list_serializer_factory(serializer_class, restriction=Restriction(INCLUDE_KEY, PATH_KEY)):
+def list_serializer_factory(serializer_class, restriction=Restriction(include_key=INCLUDE_KEY, exclude_key=EXCLUDE_KEY, path_key=PATH_KEY)):
     k = (serializer_class, True, restriction.__hash__())
     if k in _cache:
         return _cache[k]
