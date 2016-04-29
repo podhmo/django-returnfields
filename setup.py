@@ -30,15 +30,17 @@ testing_extras = tests_require + [
 
 
 class MyTest(TestCommand):
+    # if you want to run specific tests only.
+    # `python setup.py test -s  django_returnfields.tests.<module>.<class>.<method>`
     def run_tests(self):
         import os
         if "DJANGO_SETTINGS_MODULE" not in os.environ:
-            os.environ["DJANGO_SETTINGS_MODULE"] = "{}.settings".format(self.test_suite)
+            os.environ["DJANGO_SETTINGS_MODULE"] = "django_returnfields.tests.settings"
         from django.test.utils import get_runner
         from django.conf import settings
         import django
         django.setup()
-        return get_runner(settings)().run_tests([self.test_suite])
+        return get_runner(settings)().run_tests([self.test_args[-1]])
 
 
 setup(name='django-returnfields',

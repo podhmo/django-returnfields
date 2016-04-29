@@ -3,6 +3,6 @@ from django.db import models
 from django.contrib.auth.models import User
 
 
-class Group(models.Model):
+class Skill(models.Model):
     name = models.CharField(max_length=255, default="", null=False)
-    user = models.ForeignKey(User, null=False)
+    user = models.ForeignKey(User, null=False, related_name="skills")

@@ -6,7 +6,8 @@ from . import viewsets
 router = routers.DefaultRouter()
 router.register(r'users', viewsets.UserViewSet)
 router.register(r'users2', viewsets.UserViewSet2)
-router.register(r'groups', viewsets.GroupViewSet)
+router.register(r'users3', viewsets.SkillUserViewSet)
+router.register(r'skills', viewsets.SkillViewSet)
 
 urlpatterns = [
     url(r'^api/', include(router.urls)),

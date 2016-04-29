@@ -1,5 +1,7 @@
 # -*- coding:utf-8 -*-
 from collections import OrderedDict
+from rest_framework import serializers
+
 
 INCLUDE_KEY = "return_fields"
 PATH_KEY = "_drf__path"  # {name: string, candidates: string[]}[]
@@ -23,7 +25,6 @@ class Restriction(object):
 
     def restrict(self, serializer, fields):
         candidates = serializer.context[PATH_KEY][-1]["candidates"]
-
         if "" in candidates:  # all fields
             return fields
 
@@ -41,25 +42,28 @@ _cache = {}
 
 
 def serializer_factory(serializer_class, restriction=Restriction(INCLUDE_KEY)):
-    k = (serializer_class, restriction.__hash__())
+    k = (serializer_class, False, restriction.__hash__())
     if k in _cache:
         return _cache[k]
 
     class ReturnFieldsSerializer(serializer_class):
+        # class Meta(serializer_class.Meta):
+        #     list_serializer_class = ReturnFieldsListSerializer
+
         # override
         def get_fields(self):
-            fields = super().get_fields()
+            fields = super(ReturnFieldsSerializer, self).get_fields()
             return self.get_restricted_fields(fields)
 
         # override
         def to_representation(self, instance):
             if not self.field_name or PATH_KEY not in self.context:
-                return super().to_representation(instance)
+                return super(ReturnFieldsSerializer, self).to_representation(instance)
             frame = self.context[PATH_KEY][-1]
             prefix = "{}__".format(self.field_name)
             candidates = [s.lstrip(prefix) for s in frame["candidates"]]
             self.context[PATH_KEY].append({"name": self.field_name, "candidates": candidates})
-            ret = super().to_representation(instance)
+            ret = super(ReturnFieldsSerializer, self).to_representation(instance)
             self.context[PATH_KEY].pop()
             return ret
 
@@ -73,14 +77,41 @@ def serializer_factory(serializer_class, restriction=Restriction(INCLUDE_KEY)):
     ReturnFieldsSerializer.__name__ = "ReturnFields{}".format(serializer_class.__name__)
     ReturnFieldsSerializer.__doc__ = serializer_class.__doc__
     _cache[k] = ReturnFieldsSerializer
-    upgrade_classes(serializer_class, restriction)
+    upgrade_member_classes(serializer_class, restriction)
     return ReturnFieldsSerializer
 
 
-def upgrade_classes(serializer_class, restriction):
+def list_serializer_factory(serializer_class, restriction=Restriction(INCLUDE_KEY)):
+    k = (serializer_class, True, restriction.__hash__())
+    if k in _cache:
+        return _cache[k]
+
+    class ReturnFieldsListSerializer(serializer_class):
+        # override
+        def to_representation(self, data):
+            if not self.field_name or PATH_KEY not in self.context:
+                return super(ReturnFieldsListSerializer, self).to_representation(data)
+            frame = self.context[PATH_KEY][-1]
+            prefix = "{}__".format(self.field_name)
+            candidates = [s.lstrip(prefix) for s in frame["candidates"]]
+            self.context[PATH_KEY].append({"name": self.field_name, "candidates": candidates})
+            ret = super(ReturnFieldsListSerializer, self).to_representation(data)
+            self.context[PATH_KEY].pop()
+            return ret
+
+    ReturnFieldsListSerializer.__name__ = "ReturnFieldsList{}".format(serializer_class.__name__)
+    ReturnFieldsListSerializer.__doc__ = serializer_class.__doc__
+    _cache[k] = ReturnFieldsListSerializer
+    return ReturnFieldsListSerializer
+
+
+def upgrade_member_classes(serializer_class, restriction):
     fields = serializer_class._declared_fields
     for field in fields.values():
+        # ListSerializer
+        if getattr(field, "many", False) and hasattr(field, "child"):
+            field.child.__class__ = serializer_factory(field.child.__class__, restriction)
+            field.__class__ = list_serializer_factory(field.__class__, restriction)
         # serializer but not return fields serializer
-        if hasattr(field, "_declared_fields") and not hasattr(field, "get_restricted_fields"):
-            upgraded_class = serializer_factory(field.__class__, restriction)
-            field.__class__ = upgraded_class
+        elif hasattr(field, "_declared_fields") and not hasattr(field, "get_restricted_fields"):
+            field.__class__ = serializer_factory(field.__class__, restriction)

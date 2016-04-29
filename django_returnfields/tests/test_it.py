@@ -54,44 +54,59 @@ class NestedRestrictFeatureTests(APITestCase):
     def setUp(self):
         super().setUp()
         self.login_user = User.objects.create_superuser('admin', 'myemail@test.com', '')
-        from .models import Group
-        Group.objects.create(user=self.login_user, name="login-group")
+        from .models import Skill
+        Skill.objects.create(user=self.login_user, name="magic")
+        Skill.objects.create(user=self.login_user, name="magik")
         self.client.force_authenticate(self.login_user)
 
     def test_no_filtering(self):
-        path = "/api/groups/"
+        path = "/api/skills/"
         response = self.client.get(path, format="json")
         self.assertEqual(response.status_code, status.HTTP_200_OK, msg=extract_error_message(response))
         self.assertEqual(set(response.data[0].keys()), {"id", "user", "name"})
         self.assertEqual(set(response.data[0]["user"].keys()), {"id", "url", "username", "is_staff", "email"})
 
     def test_same_keys(self):
-        path = "/api/groups/?return_fields=user, id"
+        path = "/api/skills/?return_fields=user, id"
         response = self.client.get(path, format="json")
         self.assertEqual(response.status_code, status.HTTP_200_OK, msg=extract_error_message(response))
         self.assertEqual(set(response.data[0].keys()), {"id", "user"})
         self.assertEqual(set(response.data[0]["user"].keys()), {"id", "url", "username", "is_staff", "email"})
 
     def test_nested__all(self):
-        path = "/api/groups/?return_fields=user"
+        path = "/api/skills/?return_fields=user"
         response = self.client.get(path, format="json")
         self.assertEqual(response.status_code, status.HTTP_200_OK, msg=extract_error_message(response))
         self.assertEqual(set(response.data[0].keys()), {"user"})
         self.assertEqual(set(response.data[0]["user"].keys()), {"id", "url", "username", "is_staff", "email"})
 
     def test_nested__all__with_noise(self):
-        path = "/api/groups/?return_fields=user, user__id"
+        path = "/api/skills/?return_fields=user, user__id"
         response = self.client.get(path, format="json")
         self.assertEqual(response.status_code, status.HTTP_200_OK, msg=extract_error_message(response))
         self.assertEqual(set(response.data[0].keys()), {"user"})
         self.assertEqual(set(response.data[0]["user"].keys()), {"id", "url", "username", "is_staff", "email"})
 
     def test_nested__specific(self):
-        path = "/api/groups/?return_fields=user__id"
+        path = "/api/skills/?return_fields=user__id"
         response = self.client.get(path, format="json")
         self.assertEqual(response.status_code, status.HTTP_200_OK, msg=extract_error_message(response))
         self.assertEqual(set(response.data[0].keys()), {"user"})
         self.assertEqual(set(response.data[0]["user"].keys()), {"id"})
+
+    def test_nested__many__no_filtering(self):
+        path = "/api/users3/"
+        response = self.client.get(path, format="json")
+        self.assertEqual(response.status_code, status.HTTP_200_OK, msg=extract_error_message(response))
+        self.assertEqual(set(response.data[0].keys()), {"id", "skills", "username"})
+        self.assertEqual(set(response.data[0]["skills"][0].keys()), {"id", "name"})
+
+    def test_nested__many(self):
+        path = "/api/users3/?return_fields=skills__name,username"
+        response = self.client.get(path, format="json")
+        self.assertEqual(response.status_code, status.HTTP_200_OK, msg=extract_error_message(response))
+        self.assertEqual(set(response.data[0].keys()), {"skills", "username"})
+        self.assertEqual(set(response.data[0]["skills"][0].keys()), {"name"})
 
 
 class PlainCRUDActionTests(APITestCase):

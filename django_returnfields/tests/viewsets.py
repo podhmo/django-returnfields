@@ -5,7 +5,7 @@ from rest_framework import viewsets
 from django_returnfields import serializer_factory, Restriction
 
 from . import serializers
-from .models import Group
+from .models import Skill
 
 
 class UserViewSet(viewsets.ModelViewSet):
@@ -20,6 +20,11 @@ class UserViewSet2(viewsets.ModelViewSet):
         restriction=Restriction(include_key="include"))
 
 
-class GroupViewSet(viewsets.ModelViewSet):
-    queryset = Group.objects.all()
-    serializer_class = serializer_factory(serializers.GroupSerializer)
+class SkillUserViewSet(viewsets.ModelViewSet):
+    queryset = User.objects.all()
+    serializer_class = serializer_factory(serializers.SkillUserSerializer)
+
+
+class SkillViewSet(viewsets.ModelViewSet):
+    queryset = Skill.objects.all()
+    serializer_class = serializer_factory(serializers.SkillSerializer)
