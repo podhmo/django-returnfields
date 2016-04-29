@@ -26,6 +26,7 @@ tests_require = [
 ]
 
 testing_extras = tests_require + [
+    "tox"
 ]
 
 
@@ -50,6 +51,8 @@ setup(name='django-returnfields',
       classifiers=[
           "Programming Language :: Python",
           "Programming Language :: Python :: Implementation :: CPython",
+          'Framework :: Django',
+          'License :: OSI Approved :: BSD License',
       ],
       keywords='django restframework return_fields',
       author="podhmo",
