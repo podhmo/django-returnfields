@@ -1,6 +1,6 @@
 # -*- coding:utf-8 -*-
 from collections import OrderedDict
-
+import warnings
 # TODO: see settings
 INCLUDE_KEY = "return_fields"
 EXCLUDE_KEY = "skip_fields"
@@ -132,7 +132,11 @@ def serializer_factory(serializer_class, restriction=Restriction(include_key=INC
                 return fields
 
     ReturnFieldsSerializer.__name__ = "ReturnFields{}".format(serializer_class.__name__)
-    ReturnFieldsSerializer.__doc__ = serializer_class.__doc__
+    try:
+        ReturnFieldsSerializer.__doc__ = serializer_class.__doc__
+    except AttributeError as e:
+        warnings.warn(str(e), UserWarning)  # for python2.x
+
     _cache[k] = ReturnFieldsSerializer
     upgrade_member_classes(serializer_class, restriction)
     return ReturnFieldsSerializer
@@ -155,7 +159,10 @@ def list_serializer_factory(serializer_class, restriction=Restriction(include_ke
             return super(ReturnFieldsListSerializer, self).to_representation(data)
 
     ReturnFieldsListSerializer.__name__ = "ReturnFieldsList{}".format(serializer_class.__name__)
-    ReturnFieldsListSerializer.__doc__ = serializer_class.__doc__
+    try:
+        ReturnFieldsListSerializer.__doc__ = serializer_class.__doc__
+    except AttributeError as e:
+        warnings.warn(str(e), UserWarning)  # for python2.x
     _cache[k] = ReturnFieldsListSerializer
     return ReturnFieldsListSerializer
 
