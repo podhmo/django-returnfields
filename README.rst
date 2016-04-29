@@ -1,6 +1,9 @@
 django-returnfields
 ========================================
 
+.. image:: https://travis-ci.org/podhmo/django-returnfields.svg
+  :target: https://travis-ci.org/podhmo/django-returnfields.svg
+
 adding restriction of your api's return fields, in restframework.
 
 what is this?
