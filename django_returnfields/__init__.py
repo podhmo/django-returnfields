@@ -78,7 +78,7 @@ class Restriction(object):
                     ret[k] = fields[k]
         # exclude filter
         for k in frame[self.exclude_key]:
-            fields.pop(k, None)
+            ret.pop(k, None)
         return ret
 
     def to_representation(self, serializer, data):
