@@ -48,7 +48,7 @@ class RestrictFeatureTests(APITestCase):
         self.assertNotEqual(set(response.data[0].keys()), {"username"})
 
     def test_restricted__exclude(self):
-        path = "/api/users/?exclude=username,url,email"
+        path = "/api/users/?skip_fields=username,url,email"
         response = self.client.get(path, format="json")
         self.assertEqual(response.status_code, status.HTTP_200_OK, msg=extract_error_message(response))
         self.assertEqual(set(response.data[0].keys()), {"id", "is_staff"})
@@ -112,6 +112,13 @@ class NestedRestrictFeatureTests(APITestCase):
         response = self.client.get(path, format="json")
         self.assertEqual(response.status_code, status.HTTP_200_OK, msg=extract_error_message(response))
         self.assertEqual(set(response.data[0].keys()), {"skills", "username"})
+        self.assertEqual(set(response.data[0]["skills"][0].keys()), {"name"})
+
+    def test_nested__many__exclude(self):
+        path = "/api/users3/?return_fields=skills&skip_fields=skills__id"
+        response = self.client.get(path, format="json")
+        self.assertEqual(response.status_code, status.HTTP_200_OK, msg=extract_error_message(response))
+        self.assertEqual(set(response.data[0].keys()), {"skills"})
         self.assertEqual(set(response.data[0]["skills"][0].keys()), {"name"})
 
 

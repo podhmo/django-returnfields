@@ -2,11 +2,20 @@
 from collections import OrderedDict
 
 INCLUDE_KEY = "return_fields"
-EXCLUDE_KEY = "exclude"
+EXCLUDE_KEY = "skip_fields"
 PATH_KEY = "_drf__path"  # {name: string, return_fields: string[], exclude: string[]}[]
 
 # xxx
 ALL = ""
+
+
+def truncate_for_child(s, prefix, field_name):
+    if s.startswith(prefix):
+        return s[len(prefix):]
+    elif s == field_name:
+        return ALL
+    else:
+        return s
 
 
 class Restriction(object):
@@ -20,18 +29,21 @@ class Restriction(object):
         if PATH_KEY not in serializer.context:
             frame = {
                 "name": "",
-                "return_fields": self.parse_passed_values(serializer, self.include_key),
-                "exclude": self.parse_passed_values(serializer, self.exclude_key),
+                self.include_key: self.parse_passed_values(serializer, self.include_key),
+                self.exclude_key: self.parse_passed_values(serializer, self.exclude_key),
             }
-            if frame["exclude"] and not frame["return_fields"]:
-                frame["return_fields"] = [ALL]
+            if frame[self.exclude_key] and not frame[self.include_key]:
+                frame[self.include_key] = [ALL]
             serializer.context[PATH_KEY] = [frame]
 
     def get_passed_values(self, serializer):
         return serializer.context["request"].GET
 
     def is_active(self, serializer):
-        values = self.get_passed_values(serializer)
+        try:
+            values = self.get_passed_values(serializer)
+        except KeyError:
+            return False
         return any(k in values for k in self.active_check_keys)
 
     def parse_passed_values(self, serializer, key):
@@ -49,7 +61,7 @@ class Restriction(object):
 
     def to_restricted_fields(self, serializer, fields):
         frame = self.current_frame(serializer)
-        return_fields = frame["return_fields"]
+        return_fields = frame[self.include_key]
         if ALL in return_fields:
             ret = fields
         else:
@@ -60,19 +72,20 @@ class Restriction(object):
                 if k in return_fields or k in relations:
                     ret[k] = fields[k]
         # exclude filter
-        for k in frame["exclude"]:
+        for k in frame[self.exclude_key]:
             fields.pop(k, None)
         return ret
 
     def to_representation(self, serializer, data):
         if not serializer.field_name or self.path_key not in serializer.context:
             return serializer._to_representation(data)
+        field_name = serializer.field_name
         frame = self.current_frame(serializer)
-        prefix = "{}__".format(serializer.field_name)
+        prefix = "{}__".format(field_name)
         new_frame = {
-            "name": serializer.field_name,
-            "return_fields": [s.lstrip(prefix) for s in frame["return_fields"]],
-            "exclude": [s.lstrip(prefix) for s in frame["exclude"]]
+            "name": field_name,
+            self.include_key: [truncate_for_child(s, prefix, field_name) for s in frame[self.include_key]],
+            self.exclude_key: [truncate_for_child(s, prefix, field_name) for s in frame[self.exclude_key]]
         }
         self.push_frame(serializer, new_frame)
         ret = serializer._to_representation(data)
