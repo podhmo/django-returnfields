@@ -15,3 +15,8 @@ install:
     - export PYTHONPATH=.
 
 script: python setup.py test
+
+matrix:
+  exclude:
+    - python: 3.5
+      env: DJANGO="1.7.11"
