@@ -3,7 +3,7 @@ from collections import OrderedDict
 
 INCLUDE_KEY = "return_fields"
 EXCLUDE_KEY = "exclude"
-PATH_KEY = "_drf__path"  # {name: string, candidates: string[]}[]
+PATH_KEY = "_drf__path"  # {name: string, return_fields: string[], exclude: string[]}[]
 
 
 class Restriction(object):
@@ -14,7 +14,11 @@ class Restriction(object):
 
     def setup(self, serializer):
         if PATH_KEY not in serializer.context:
-            frame = {"name": "", "candidates": self.parse_passed_values(serializer)}
+            frame = {
+                "name": "",
+                "return_fields": self.parse_passed_values(serializer, self.include_key),
+                "exclude": self.parse_passed_values(serializer, self.exclude_key),
+            }
             serializer.context[PATH_KEY] = [frame]
 
     def get_passed_values(self, serializer):
@@ -23,8 +27,8 @@ class Restriction(object):
     def is_active(self, serializer):
         return self.include_key in self.get_passed_values(serializer)
 
-    def parse_passed_values(self, serializer):
-        fields_names_string = self.get_passed_values(serializer)[self.include_key]
+    def parse_passed_values(self, serializer, key):
+        fields_names_string = self.get_passed_values(serializer).get(key, "")
         return [field_name.strip() for field_name in fields_names_string.split(",")]
 
     def current_frame(self, serializer):
@@ -37,15 +41,20 @@ class Restriction(object):
         return serializer.context[self.path_key].pop()
 
     def to_restricted_fields(self, serializer, fields):
-        candidates = self.current_frame(serializer)["candidates"]
-        if "" in candidates:  # all fields
-            return fields
-
-        relations = [field_name.split("__", 2)[0] for field_name in candidates]
-        ret = OrderedDict()
-        for k in fields.keys():
-            if k in candidates or k in relations:
-                ret[k] = fields[k]
+        frame = self.current_frame(serializer)
+        return_fields = frame["return_fields"]
+        if "" in return_fields:
+            ret = fields
+        else:
+            # include filter
+            ret = OrderedDict()
+            relations = [field_name.split("__", 2)[0] for field_name in return_fields]
+            for k in fields.keys():
+                if k in return_fields or k in relations:
+                    ret[k] = fields[k]
+        # exclude filter
+        for k in frame["exclude"]:
+            fields.pop(k, None)
         return ret
 
     def to_representation(self, serializer, data):
@@ -53,8 +62,12 @@ class Restriction(object):
             return serializer._to_representation(data)
         frame = self.current_frame(serializer)
         prefix = "{}__".format(serializer.field_name)
-        candidates = [s.lstrip(prefix) for s in frame["candidates"]]
-        self.push_frame(serializer, {"name": serializer.field_name, "candidates": candidates})
+        new_frame = {
+            "name": serializer.field_name,
+            "return_fields": [s.lstrip(prefix) for s in frame["return_fields"]],
+            "exclude": [s.lstrip(prefix) for s in frame["exclude"]]
+        }
+        self.push_frame(serializer, new_frame)
         ret = serializer._to_representation(data)
         self.pop_frame(serializer)
         return ret
@@ -74,7 +87,7 @@ def serializer_factory(serializer_class, restriction=Restriction(INCLUDE_KEY, PA
         # override
         def get_fields(self):
             fields = super(ReturnFieldsSerializer, self).get_fields()
-            return self.get_restricted_fields(fields)
+            return self.to_restricted_fields(fields)
 
         # override
         def to_representation(self, instance):
@@ -83,7 +96,7 @@ def serializer_factory(serializer_class, restriction=Restriction(INCLUDE_KEY, PA
         def _to_representation(self, instance):
             return super(ReturnFieldsSerializer, self).to_representation(instance)
 
-        def get_restricted_fields(self, fields):
+        def to_restricted_fields(self, fields):
             if restriction.is_active(self):
                 restriction.setup(self)
                 return restriction.to_restricted_fields(self, fields)
@@ -124,5 +137,5 @@ def upgrade_member_classes(serializer_class, restriction):
             field.child.__class__ = serializer_factory(field.child.__class__, restriction)
             field.__class__ = list_serializer_factory(field.__class__, restriction)
         # serializer but not return fields serializer
-        elif hasattr(field, "_declared_fields") and not hasattr(field, "get_restricted_fields"):
+        elif hasattr(field, "_declared_fields") and not hasattr(field, "to_restricted_fields"):
             field.__class__ = serializer_factory(field.__class__, restriction)
