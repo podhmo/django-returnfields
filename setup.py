@@ -1,6 +1,7 @@
 # -*- coding:utf-8 -*-
 
 import os
+import sys
 from setuptools import setup, find_packages
 from setuptools.command.test import test as TestCommand
 
@@ -41,7 +42,7 @@ class MyTest(TestCommand):
         from django.conf import settings
         import django
         django.setup()
-        return get_runner(settings)().run_tests([self.test_args[-1]])
+        sys.exit(get_runner(settings)().run_tests([self.test_args[-1]]))
 
 
 setup(name='django-returnfields',
