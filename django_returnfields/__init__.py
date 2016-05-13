@@ -1,6 +1,7 @@
 # -*- coding:utf-8 -*-
 from collections import OrderedDict
 import warnings
+
 # TODO: see settings
 INCLUDE_KEY = "return_fields"
 EXCLUDE_KEY = "skip_fields"
@@ -157,6 +158,9 @@ def list_serializer_factory(serializer_class, restriction=Restriction(include_ke
 
         def _to_representation(self, data):
             return super(ReturnFieldsListSerializer, self).to_representation(data)
+
+        def to_restricted_fields(self, fields):
+            raise Exception("dont't use this")
 
     ReturnFieldsListSerializer.__name__ = "ReturnFieldsList{}".format(serializer_class.__name__)
     try:
