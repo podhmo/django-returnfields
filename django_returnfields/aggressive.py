@@ -32,7 +32,7 @@ class CorrectNameCollector(object):
             else:
                 k, sub_name = name.split("__", 1)
                 relations[k].append(sub_name)
-                if with_relation:
+                if with_relation and s is not None:
                     collected.append(k)
         for k, sub_name_list in relations.items():
             s = candidates.get(k)

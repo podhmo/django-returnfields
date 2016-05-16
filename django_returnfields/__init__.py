@@ -11,11 +11,13 @@ EXCLUDE_KEY = "skip_fields"
 PATH_KEY = "_drf__path"  # {name: string, return_fields: string[], skip_fields: string[]}[]
 AGGRESSIVE_KEY = "_drf__aggressive"  # boolean
 # xxx
-ALL = ""
+ALL = ":all:"
 
 
 def truncate_for_child(fields, prefix, field_name):
     if field_name is None:
+        return fields
+    if len(fields) == 1 and fields[0] == ALL:
         return fields
     r = []
     for s in fields:
@@ -40,6 +42,7 @@ class Restriction(object):
     def setup(self, serializer):
         if PATH_KEY in serializer.context:
             return False
+
         frame = {
             "name": "",
             self.include_key: self.parse_passed_values(serializer, self.include_key),
@@ -48,6 +51,11 @@ class Restriction(object):
         if frame[self.exclude_key] and not frame[self.include_key]:
             frame[self.include_key] = [ALL]
         serializer.context[PATH_KEY] = [frame]
+
+        if frame.get(INCLUDE_KEY, None) and not frame.get(EXCLUDE_KEY, None):
+            serializer.context[AGGRESSIVE_KEY] = "include"
+        elif frame.get(EXCLUDE_KEY, None):
+            serializer.context[AGGRESSIVE_KEY] = "exclude"
         return True
 
     def get_passed_values(self, serializer):
@@ -105,16 +113,16 @@ class Restriction(object):
         }
         self.push_frame(serializer, new_frame)
         if many and "aggressive" in self.get_passed_values(serializer):
-            data = self.optimize_query_aggressively(new_frame, data)
+            data = self.optimize_query_aggressively(new_frame, data, serializer.context.get(AGGRESSIVE_KEY))
         ret = serializer._to_representation(data)
         self.pop_frame(serializer)
         return ret
 
-    def optimize_query_aggressively(self, frame, data):
+    def optimize_query_aggressively(self, frame, data, optimize_type):
         if hasattr(data, "all"):
-            if frame.get(EXCLUDE_KEY, None):
+            if optimize_type == 'exclude':
                 return aggressive.safe_defer(data.all(), frame[self.exclude_key])
-            elif frame.get(INCLUDE_KEY, None):
+            elif optimize_type == 'include':
                 return aggressive.safe_only(data.all(), frame[self.include_key])
         return data
 

@@ -64,7 +64,7 @@ class CollectorTests(TestCase):
         self.assertEqual(result, expected)
 
 
-class QueryTest(TestCase):
+class QueryTests(TestCase):
     def test_safe_only(self):
         from django_returnfields.aggressive import safe_only
         fields = ["xxxx", "id", "xxxx__id", "groups__id", "groups__id__xxxx", "xxx__yyy__zzz"]

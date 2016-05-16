@@ -139,13 +139,28 @@ class AggressiveFeatureTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK, msg=extract_error_message(response))
         self.assertEqual(set(response.data[0].keys()), {"id"})
 
+    def test_exclude__aggressive(self):
+        path = "/api/users4/?skip_fields=id&aggressive=1"
+        with self.assertNumQueries(3):
+            response = self.client.get(path, format="json")
+        self.assertEqual(response.status_code, status.HTTP_200_OK, msg=extract_error_message(response))
+        self.assertEqual(set(response.data[0].keys()), {"username", "groups"})
+        self.assertEqual(set(response.data[0]["groups"][0].keys()), {"name", "id", "permissions"})
+
     def test_include__relation__aggressive(self):
         path = "/api/users4/?return_fields=id,groups&aggressive=1"
-        with self.assertNumQueries(3):  # xxx
+        with self.assertNumQueries(3):
             response = self.client.get(path, format="json")
         self.assertEqual(response.status_code, status.HTTP_200_OK, msg=extract_error_message(response))
         self.assertEqual(set(response.data[0].keys()), {"id", "groups"})
         self.assertEqual(set(response.data[0]["groups"][0].keys()), {"name", "id", "permissions"})
+
+    def test_exclude__relation__aggressive(self):
+        path = "/api/users4/?skip_fields=id,groups&aggressive=1"
+        with self.assertNumQueries(1):
+            response = self.client.get(path, format="json")
+        self.assertEqual(response.status_code, status.HTTP_200_OK, msg=extract_error_message(response))
+        self.assertEqual(set(response.data[0].keys()), {"username"})
 
     def test_include__related_field__aggressive(self):
         path = "/api/users4/?return_fields=id,groups__name&aggressive=1"
@@ -154,6 +169,24 @@ class AggressiveFeatureTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK, msg=extract_error_message(response))
         self.assertEqual(set(response.data[0].keys()), {"id", "groups"})
         self.assertEqual(set(response.data[0]["groups"][0].keys()), {"name"})
+
+    def test_exclude__related_field__aggressive(self):
+        path = "/api/users4/?skip_fields=id,groups__name&aggressive=1"
+        with self.assertNumQueries(3):
+            response = self.client.get(path, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK, msg=extract_error_message(response))
+        self.assertEqual(set(response.data[0].keys()), {"username", "groups"})
+        self.assertEqual(set(response.data[0]["groups"][0].keys()), {"id", "permissions"})
+
+    def test_both__related_field__aggressive(self):
+        path = "/api/users4/?return_fields=groups&skip_fields=id,groups__permissions&aggressive=1"
+        with self.assertNumQueries(2):
+            response = self.client.get(path, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK, msg=extract_error_message(response))
+        self.assertEqual(set(response.data[0].keys()), {"groups"})
+        self.assertEqual(set(response.data[0]["groups"][0].keys()), {"id", "name"})
 
 
 class PlainCRUDActionTests(APITestCase):
