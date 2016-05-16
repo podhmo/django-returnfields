@@ -1,6 +1,6 @@
 # -*- coding:utf-8 -*-
 from collections import defaultdict, namedtuple
-
+import django
 State = namedtuple("State", "field, is_relation, candidates")
 
 
@@ -48,10 +48,17 @@ class CorrectNameCollector(object):
 def new_state(s, candidates):
     return State(field=s.field, is_relation=s.is_relation, candidates=candidates)
 
+if django.VERSION < (1, 8):
+    def get_all_fields(m):
+        return m._meta.fields
+else:
+    def get_all_fields(m):
+        return m._meta.get_fields()
+
 
 def extract_candidates(model):
     d = tree()
-    for f in model._meta.get_fields():
+    for f in get_all_fields(model):
         if not hasattr(f, "attname"):
             # print("model: {}.{} does not have attname".format(model, f))
             continue
