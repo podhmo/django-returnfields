@@ -17,40 +17,44 @@ class CorrectNameCollector(object):
         try:
             candidates = self.cache[model]
         except KeyError:
-            candidates = self.cache[model] = self.load_candidates(model)
+            candidates = self.cache[model] = extract_candidates(model)
         return self.drilldown(candidates, name_list)
 
     def drilldown(self, candidates, name_list):
-        r = []
+        collected = []
         relations = defaultdict(list)
         for name in name_list:
             if "__" not in name:
                 if name not in candidates:
                     continue
-                r.append(name)
+                collected.append(name)
             else:
-                k, subname = name.split("__", 1)
-                relations[k].append(subname)
+                k, sub_name = name.split("__", 1)
+                relations[k].append(sub_name)
         for k, sub_name_list in relations.items():
             s = candidates.get(k)
             if s is None:
                 continue
             if not s.candidates:
-                candidates[k] = self.load_candidates(s.field.model)
-            r.extend(self.drilldown(s.candidates, sub_name_list))
-        return r
+                s = candidates[k] = new_state(s, extract_candidates(s.field.model))
+            sub_collected = self.drilldown(s.candidates, sub_name_list)
+            collected.extend(["__".join([k, suffix]) for suffix in sub_collected])
+        return collected
 
-    def load_candidates(self, model):
-        d = tree()
-        for f in model._meta.get_fields():
-            if f.is_relation:
-                s = State(field=f, is_relation=True, candidates=tree())
-            else:
-                s = State(field=f, is_relation=False, candidates=None)
-            d[f.name] = s
-            if hasattr(f, "attrname"):
-                d[f.attname] = s
-        return d
+
+def new_state(s, candidates):
+    return State(field=s.field, is_relation=s.is_relation, candidates=candidates)
+
+
+def extract_candidates(model):
+    d = tree()
+    for f in model._meta.get_fields():
+        if not hasattr(f, "attname"):
+            # print("model: {}.{} does not have attname".format(model, f))
+            continue
+        s = State(field=f, is_relation=f.is_relation, candidates=None)
+        d[f.name] = s
+    return d
 
 
 default_name_collector = CorrectNameCollector()
