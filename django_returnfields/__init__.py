@@ -1,12 +1,16 @@
 # -*- coding:utf-8 -*-
 from collections import OrderedDict
+from django.db import models
+from rest_framework.serializers import ListSerializer
+from . import aggressive
 import warnings
+
 
 # TODO: see settings
 INCLUDE_KEY = "return_fields"
 EXCLUDE_KEY = "skip_fields"
 PATH_KEY = "_drf__path"  # {name: string, return_fields: string[], skip_fields: string[]}[]
-
+AGGRESSIVE_KEY = "_drf__aggressive"  # boolean
 # xxx
 ALL = ""
 
@@ -132,6 +136,13 @@ def serializer_factory(serializer_class, restriction=Restriction(include_key=INC
             else:
                 return fields
 
+        class Meta(getattr(serializer_class, 'Meta', object)):
+            list_serializer_class = list_serializer_factory(
+                getattr(getattr(serializer_class, 'Meta', object),
+                        'list_serializer_class',
+                        ListSerializer),
+                restriction=restriction)
+
     ReturnFieldsSerializer.__name__ = "ReturnFields{}".format(serializer_class.__name__)
     try:
         ReturnFieldsSerializer.__doc__ = serializer_class.__doc__
@@ -154,6 +165,16 @@ def list_serializer_factory(serializer_class, restriction=Restriction(include_ke
     class ReturnFieldsListSerializer(serializer_class):
         # override
         def to_representation(self, data):
+            if restriction.is_active(self):
+                restriction.setup(self)
+
+            if "aggressive" in restriction.get_passed_values(self):
+                if hasattr(data, "all"):
+                    frame = restriction.current_frame(self)
+                    if INCLUDE_KEY in frame:
+                        data = aggressive.safe_only(data.all(), frame[restriction.include_key])
+                    elif EXCLUDE_KEY in frame:
+                        data = aggressive.safe_defer(data.all(), frame[restriction.include_key])
             return restriction.to_representation(self, data)
 
         def _to_representation(self, data):

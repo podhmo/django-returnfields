@@ -25,6 +25,11 @@ class SkillUserViewSet(viewsets.ModelViewSet):
     serializer_class = serializer_factory(serializers.SkillUserSerializer)
 
 
+class GroupUserViewSet(viewsets.ModelViewSet):
+    queryset = User.objects.all()
+    serializer_class = serializer_factory(serializers.GroupUserSerializer)
+
+
 class SkillViewSet(viewsets.ModelViewSet):
     queryset = Skill.objects.all()
     serializer_class = serializer_factory(serializers.SkillSerializer)

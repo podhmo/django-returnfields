@@ -87,7 +87,7 @@ class NestedRestrictFeatureTests(APITestCase):
         self.assertEqual(set(response.data[0]["user"].keys()), {"id", "url", "username", "is_staff", "email"})
 
     def test_nested__all__with_noise(self):
-        path = "/api/skills/?return_fields=user, user__id"
+        path = "/api/skills/?return_fields=user, user__id, xxxx"
         response = self.client.get(path, format="json")
         self.assertEqual(response.status_code, status.HTTP_200_OK, msg=extract_error_message(response))
         self.assertEqual(set(response.data[0].keys()), {"user"})
@@ -120,6 +120,37 @@ class NestedRestrictFeatureTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK, msg=extract_error_message(response))
         self.assertEqual(set(response.data[0].keys()), {"skills"})
         self.assertEqual(set(response.data[0]["skills"][0].keys()), {"name"})
+
+
+class AggressiveFeatureTests(APITestCase):
+    # see: ./url:GroupUserViewSet.serializer_class
+    def setUp(self):
+        from django.contrib.auth.models import Group
+        super(AggressiveFeatureTests, self).setUp()
+        self.login_user = User.objects.create_superuser('admin', 'myemail@test.com', '')
+        group = Group.objects.create(name="magic")
+        group.user_set.add(self.login_user)
+        group.save()
+
+    def test_include__aggressive(self):
+        path = "/api/users4/?return_fields=id&aggressive=1"
+        response = self.client.get(path, format="json")
+        self.assertEqual(response.status_code, status.HTTP_200_OK, msg=extract_error_message(response))
+        self.assertEqual(set(response.data[0].keys()), {"id"})
+
+    def test_include__relation__aggressive(self):
+        path = "/api/users4/?return_fields=id,groups&aggressive=1"
+        with self.assertNumQueries(100):
+            response = self.client.get(path, format="json")
+            self.assertEqual(response.status_code, status.HTTP_200_OK, msg=extract_error_message(response))
+            self.assertEqual(set(response.data[0].keys()), {"id", "groups"})
+
+    # def test_include__relation__aggressive2(self):
+    #     path = "/api/users4/?return_fields=id,groups__id&aggressive=1"
+    #     with self.assertNumQueries(100):
+    #         response = self.client.get(path, format="json")
+    #         self.assertEqual(response.status_code, status.HTTP_200_OK, msg=extract_error_message(response))
+    #         self.assertEqual(set(response.data[0].keys()), {"id", "groups"})
 
 
 class PlainCRUDActionTests(APITestCase):

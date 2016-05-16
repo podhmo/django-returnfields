@@ -24,9 +24,11 @@ class CorrectNameCollector(object):
         collected = []
         relations = defaultdict(list)
         for name in name_list:
+            s = candidates.get(name)
+            if s is None:
+                continue
+
             if "__" not in name:
-                if name not in candidates:
-                    continue
                 collected.append(name)
             else:
                 k, sub_name = name.split("__", 1)
@@ -62,6 +64,7 @@ default_name_collector = CorrectNameCollector()
 
 def safe_only(qs, name_list, collector=default_name_collector):
     fields = collector.collect(qs.model, name_list)
+    print(fields, "@@@")
     return qs.only(*fields)
 
 
