@@ -134,23 +134,26 @@ class AggressiveFeatureTests(APITestCase):
 
     def test_include__aggressive(self):
         path = "/api/users4/?return_fields=id&aggressive=1"
-        response = self.client.get(path, format="json")
+        with self.assertNumQueries(1):
+            response = self.client.get(path, format="json")
         self.assertEqual(response.status_code, status.HTTP_200_OK, msg=extract_error_message(response))
         self.assertEqual(set(response.data[0].keys()), {"id"})
 
     def test_include__relation__aggressive(self):
         path = "/api/users4/?return_fields=id,groups&aggressive=1"
-        with self.assertNumQueries(100):
+        with self.assertNumQueries(3):  # xxx
             response = self.client.get(path, format="json")
-            self.assertEqual(response.status_code, status.HTTP_200_OK, msg=extract_error_message(response))
-            self.assertEqual(set(response.data[0].keys()), {"id", "groups"})
+        self.assertEqual(response.status_code, status.HTTP_200_OK, msg=extract_error_message(response))
+        self.assertEqual(set(response.data[0].keys()), {"id", "groups"})
+        self.assertEqual(set(response.data[0]["groups"][0].keys()), {"name", "id", "permissions"})
 
-    # def test_include__relation__aggressive2(self):
-    #     path = "/api/users4/?return_fields=id,groups__id&aggressive=1"
-    #     with self.assertNumQueries(100):
-    #         response = self.client.get(path, format="json")
-    #         self.assertEqual(response.status_code, status.HTTP_200_OK, msg=extract_error_message(response))
-    #         self.assertEqual(set(response.data[0].keys()), {"id", "groups"})
+    def test_include__related_field__aggressive(self):
+        path = "/api/users4/?return_fields=id,groups__name&aggressive=1"
+        with self.assertNumQueries(2):
+            response = self.client.get(path, format="json")
+        self.assertEqual(response.status_code, status.HTTP_200_OK, msg=extract_error_message(response))
+        self.assertEqual(set(response.data[0].keys()), {"id", "groups"})
+        self.assertEqual(set(response.data[0]["groups"][0].keys()), {"name"})
 
 
 class PlainCRUDActionTests(APITestCase):
