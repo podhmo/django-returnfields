@@ -79,6 +79,12 @@ using `django_returnfields.serializer_factory`
       serializer_class = serializer_factory(UserSerializer)
 
 
+appendix
+----------------------------------------
+
+if you requesting with `aggressive` option, then, django_returnfields tries to use `Query.defer()` or `Query.only()`.
+e.g. `GET /users/1/?format=json&return_fields=username,skills&skip_fields=skills__id,skills__user&aggressive=1`
+
 
 example
 ----------------------------------------
