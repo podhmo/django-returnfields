@@ -1,5 +1,5 @@
 # -*- coding:utf-8 -*-
-from django.contrib.auth.models import User
+from .models import User
 from rest_framework import viewsets
 
 from django_returnfields import serializer_factory, Restriction

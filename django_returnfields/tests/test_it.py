@@ -1,7 +1,7 @@
 # -*- coding:utf-8 -*-
 from rest_framework.test import APITestCase
 from rest_framework import status
-from django.contrib.auth.models import User
+from .models import User
 
 
 def extract_error_message(response):
@@ -125,7 +125,7 @@ class NestedRestrictFeatureTests(APITestCase):
 class AggressiveFeatureTests(APITestCase):
     # see: ./url:GroupUserViewSet.serializer_class
     def setUp(self):
-        from django.contrib.auth.models import Group
+        from .models import Group
         super(AggressiveFeatureTests, self).setUp()
         self.login_user = User.objects.create_superuser('admin', 'myemail@test.com', '')
         group = Group.objects.create(name="magic")

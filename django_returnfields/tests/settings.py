@@ -11,8 +11,6 @@ INSTALLED_APPS = [
     'django.contrib.auth',
     'django.contrib.contenttypes',
     'django.contrib.staticfiles',
-    'django.contrib.redirects',
-    'django.contrib.sites',
     "rest_framework",
     'django_returnfields.tests',
 ]
