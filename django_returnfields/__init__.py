@@ -150,7 +150,7 @@ def serializer_factory(serializer_class, restriction=Restriction(include_key=INC
         def to_representation(self, instance):
             if not restriction.is_active(self):
                 return super(ReturnFieldsSerializer, self).to_representation(instance)
-            if not restriction.setup(self) and not self.field_name:
+            elif not restriction.setup(self) and not self.field_name:
                 return super(ReturnFieldsSerializer, self).to_representation(instance)
             return restriction.to_representation(self, instance)
 
@@ -194,7 +194,7 @@ def list_serializer_factory(serializer_class, restriction=Restriction(include_ke
         def to_representation(self, data):
             if not restriction.is_active(self):
                 return super(ReturnFieldsListSerializer, self).to_representation(data)
-            if not restriction.setup(self) and not self.field_name:
+            elif not restriction.setup(self) and not self.field_name:
                 return super(ReturnFieldsListSerializer, self).to_representation(data)
             return restriction.to_representation(self, data, many=True)
 
