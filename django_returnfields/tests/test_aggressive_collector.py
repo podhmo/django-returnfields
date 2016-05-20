@@ -64,27 +64,40 @@ class CollectorTests(TestCase):
         self.assertEqual(result, expected)
 
 
-class QueryTests(TestCase):
-    def test_safe_only(self):
-        from django_returnfields.aggressive import safe_only
-        fields = ["xxxx", "username", "xxxx__id", "groups__name", "groups__name__xxxx", "xxx__yyy__zzz"]
-        qs = safe_only(User.objects.filter(groups__name=1), fields)
-        self.assertIn('SELECT "auth_user"."id", "auth_user"."username"', (str(qs.query)))
-
-    def test_safe_only__many_to_one_rel__does_not_have_attname(self):
-        from django_returnfields.aggressive import safe_only
-        fields = ["xxxx", "username", "xxxx__id", "skills__id", "skills__id__xxxx", "xxx__yyy__zzz"]
-        qs = safe_only(User.objects.filter(skills__id=1), fields)
-        self.assertIn('SELECT "auth_user"."id", "auth_user"."username"', (str(qs.query)))
+class DeferQueryTests(TestCase):
+    def _callFUT(self, query, fields):
+        from django_returnfields.aggressive import safe_defer
+        return safe_defer(query, fields)
 
     def test_safe_defer(self):
-        from django_returnfields.aggressive import safe_defer
         fields = ["xxxx", "username", "xxxx__id", "groups__name", "groups__name__xxxx", "xxx__yyy__zzz"]
-        qs = safe_defer(User.objects.filter(groups__name=1), fields)
+        qs = self._callFUT(User.objects.filter(groups__name=1), fields)
         self.assertIn('SELECT "auth_user"."id", "auth_user"."password", "auth_user"."last_login", "auth_user"."is_superuser", "auth_user"."first_name", "auth_user"."last_name", "auth_user"."email", "auth_user"."is_staff", "auth_user"."is_active", "auth_user"."date_joined"', str(qs.query))
 
     def test_safe_defer__many_to_one_rel__hasnot_attname(self):
-        from django_returnfields.aggressive import safe_defer
         fields = ["xxxx", "username", "xxxx__id", "skills__id", "skills__id__xxxx", "xxx__yyy__zzz"]
-        qs = safe_defer(User.objects.filter(skills__name="foo"), fields)
+        qs = self._callFUT(User.objects.filter(skills__name="foo"), fields)
         self.assertIn('SELECT "auth_user"."id", "auth_user"."password", "auth_user"."last_login", "auth_user"."is_superuser", "auth_user"."first_name", "auth_user"."last_name", "auth_user"."email", "auth_user"."is_staff", "auth_user"."is_active", "auth_user"."date_joined"', str(qs.query))
+
+
+class OnlyQueryTests(TestCase):
+    def _callFUT(self, query, fields):
+        from django_returnfields.aggressive import safe_only
+        return safe_only(query, fields)
+
+    def test_safe_only(self):
+        fields = ["xxxx", "username", "xxxx__id", "groups__name", "groups__name__xxxx", "xxx__yyy__zzz"]
+        qs = self._callFUT(User.objects.filter(groups__name=1), fields)
+        self.assertIn('SELECT "auth_user"."id", "auth_user"."username"', (str(qs.query)))
+
+    def test_safe_only__many_to_one_rel__does_not_have_attname(self):
+        fields = ["xxxx", "username", "xxxx__id", "skills__id", "skills__id__xxxx", "xxx__yyy__zzz"]
+        qs = self._callFUT(User.objects.filter(skills__id=1), fields)
+        self.assertIn('SELECT "auth_user"."id", "auth_user"."username"', (str(qs.query)))
+
+    def test_safe_only__with_select_related(self):
+        from django.contrib.auth.models import Permission
+        fields = ["id"]
+        qs = Permission.objects.select_related("content_type")
+        qs = self._callFUT(qs, fields)
+        print(qs.query)
