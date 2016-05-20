@@ -1,8 +1,12 @@
 # -*- coding:utf-8 -*-
+import logging
 from collections import OrderedDict
+import warnings
 from rest_framework.serializers import ListSerializer
 from . import aggressive
-import warnings
+
+
+logger = logging.getLogger(__name__)
 
 
 # TODO: see settings
@@ -48,6 +52,10 @@ class Restriction(object):
             self.include_key: self.parse_passed_values(serializer, self.include_key),
             self.exclude_key: self.parse_passed_values(serializer, self.exclude_key),
         }
+        try:
+            logger.debug("restriction: start with %s", frame)
+        except Exception:
+            logger.warn("unexpected arguments: %s", self.get_passed_values(serializer), exc_info=True)
         if frame[self.exclude_key] and not frame[self.include_key]:
             frame[self.include_key] = [ALL]
         serializer.context[PATH_KEY] = [frame]
