@@ -1,7 +1,9 @@
 # -*- coding:utf-8 -*-
 from collections import defaultdict, namedtuple
 import django
-State = namedtuple("State", "field, is_relation, candidates")
+# todo: fk_name
+State = namedtuple("State", "field, is_relation, candidates, fk_name")
+Pair = namedtuple("Pair", "for_select, for_join")
 
 
 def tree():
@@ -21,32 +23,44 @@ class CorrectNameCollector(object):
         return self.drilldown(candidates, name_list, with_relation=with_relation)
 
     def drilldown(self, candidates, name_list, with_relation):
-        collected = []
+        for_select = []
+        for_join = []
         relations = defaultdict(list)
         for name in name_list:
             s = candidates.get(name)
             if "__" not in name:
                 if s is None:
                     continue
-                collected.append(name)
+                for_select.append(name)
             else:
                 k, sub_name = name.split("__", 1)
                 relations[k].append(sub_name)
-                if with_relation and s is not None:
-                    collected.append(k)
+
         for k, sub_name_list in relations.items():
             s = candidates.get(k)
             if s is None:
                 continue
+            if with_relation:
+                if s.fk_name is None:
+                    for_join.append(k)
+                    continue  # hmm
+                else:
+                    for_select.append(k)
             if not s.candidates:
                 s = candidates[k] = new_state(s, extract_candidates(s.field.model))
-            sub_collected = self.drilldown(s.candidates, sub_name_list, with_relation)
-            collected.extend(["__".join([k, suffix]) for suffix in sub_collected])
-        return collected
+            pair = self.drilldown(s.candidates, sub_name_list, with_relation)
+            for_select.extend(["__".join([k, suffix]) for suffix in pair.for_select])
+            for_join.extend(["__".join([k, suffix]) for suffix in pair.for_join])
+        return Pair(for_select=for_select, for_join=for_join)
 
 
 def new_state(s, candidates):
-    return State(field=s.field, is_relation=s.is_relation, candidates=candidates)
+    return State(
+        field=s.field,
+        is_relation=s.is_relation,
+        candidates=candidates,
+        fk_name=s.fk_name
+    )
 
 
 if django.VERSION >= (1, 8):
@@ -71,10 +85,15 @@ else:
 def extract_candidates(model):
     d = tree()
     for f in get_all_fields(model):
-        if not hasattr(f, "attname"):
-            # print("model: {}.{} does not have attname".format(model, f))
-            continue
-        s = State(field=f, is_relation=f.is_relation, candidates=None)
+        # if not hasattr(f, "attname"):
+        #     # print("model: {}.{} does not have attname".format(model, f))
+        #     continue
+        s = State(
+            field=f,
+            is_relation=f.is_relation,
+            candidates=None,
+            fk_name=getattr(f, "attname", None)
+        )
         d[f.name] = s
     return d
 
@@ -83,16 +102,29 @@ default_name_collector = CorrectNameCollector()
 
 
 def safe_only(qs, name_list, collector=default_name_collector):
-    fields = collector.collect(qs.model, name_list, with_relation=True)
-    if qs.query.select_related and hasattr(qs.query.select_related, "items"):
+    pair = collector.collect(qs.model, name_list, with_relation=True)
+    if qs.query.select_related or qs._prefetch_related_lookups:
         qs = qs._clone()
-        qs.query.select_related = {k: v for k, v in qs.query.select_related.items() if k in fields}
-    return qs.only(*fields)
+        s = set(pair.for_join)
+        s.update(pair.for_select)
+        if qs.query.select_related and hasattr(qs.query.select_related, "items"):
+            qs.query.select_related = {k: v for k, v in qs.query.select_related.items() if k in s}
+            s.update(qs.query.select_related.keys())
+        if qs._prefetch_related_lookups:
+            qs._prefetch_related_lookups = [k for k in qs._prefetch_related_lookups if k in s]
+
+    return qs.only(*pair.for_select)
 
 
 def safe_defer(qs, name_list, collector=default_name_collector):
-    fields = collector.collect(qs.model, name_list, with_relation=False)
-    if qs.query.select_related and hasattr(qs.query.select_related, "items"):
+    pair = collector.collect(qs.model, name_list, with_relation=False)
+    if qs.query.select_related or qs._prefetch_related_lookups:
         qs = qs._clone()
-        qs.query.select_related = {k: v for k, v in qs.query.select_related.items() if k not in fields}
-    return qs.defer(*fields)
+        s = set(pair.for_join)
+        s.update(pair.for_select)
+        if qs.query.select_related and hasattr(qs.query.select_related, "items"):
+            qs.query.select_related = {k: v for k, v in qs.query.select_related.items() if k not in s}
+            s.update(qs.query.select_related.keys())
+        if qs._prefetch_related_lookups:
+            qs._prefetch_related_lookups = [k for k in qs._prefetch_related_lookups if k not in s]
+    return qs.defer(*pair.for_select)

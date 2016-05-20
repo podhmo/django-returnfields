@@ -28,7 +28,10 @@ class Customer(models.Model):
 
 class CustomerKarma(models.Model):
     point = models.IntegerField(null=False, default=0)
-    customer = models.OneToOneField(Customer)
+    customer = models.OneToOneField(Customer, related_name="karma")
+    memo1 = models.CharField(max_length=255, default="", null=False)  # for test
+    memo2 = models.CharField(max_length=255, default="", null=False)  # for test
+    memo3 = models.CharField(max_length=255, default="", null=False)  # for test
 
 
 class Order(models.Model):
