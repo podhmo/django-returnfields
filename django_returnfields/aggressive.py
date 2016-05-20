@@ -67,6 +67,7 @@ if django.VERSION >= (1, 8):
     def get_all_fields(m):
         return m._meta.get_fields()
 else:
+    # planning to drop 1.7
     from django.db.models.fields.related import RelatedField
 
     class FieldAdapter(object):
