@@ -79,6 +79,22 @@ class DeferQueryTests(TestCase):
         qs = self._callFUT(User.objects.filter(skills__name="foo"), fields)
         self.assertIn('SELECT "auth_user"."id", "auth_user"."password", "auth_user"."last_login", "auth_user"."is_superuser", "auth_user"."first_name", "auth_user"."last_name", "auth_user"."email", "auth_user"."is_staff", "auth_user"."is_active", "auth_user"."date_joined"', str(qs.query))
 
+    def test_safe_defer__with_select_related(self):
+        from django.contrib.redirects.models import Redirect
+        fields = ["site"]
+        qs = Redirect.objects.select_related("site")
+        self.assertIn('JOIN', str(qs.query))
+        qs = self._callFUT(qs, fields)
+        self.assertNotIn('JOIN', str(qs.query))
+
+    def test_safe_defer__with_select_related__nested(self):
+        from django.contrib.redirects.models import Redirect
+        fields = ["site__name"]
+        qs = Redirect.objects.select_related("site")
+        self.assertIn('JOIN', str(qs.query))
+        qs = self._callFUT(qs, fields)
+        self.assertIn('JOIN', str(qs.query))
+
 
 class OnlyQueryTests(TestCase):
     def _callFUT(self, query, fields):
@@ -88,16 +104,26 @@ class OnlyQueryTests(TestCase):
     def test_safe_only(self):
         fields = ["xxxx", "username", "xxxx__id", "groups__name", "groups__name__xxxx", "xxx__yyy__zzz"]
         qs = self._callFUT(User.objects.filter(groups__name=1), fields)
-        self.assertIn('SELECT "auth_user"."id", "auth_user"."username"', (str(qs.query)))
+        self.assertIn('SELECT "auth_user"."id", "auth_user"."username" FROM', (str(qs.query)))
 
     def test_safe_only__many_to_one_rel__does_not_have_attname(self):
         fields = ["xxxx", "username", "xxxx__id", "skills__id", "skills__id__xxxx", "xxx__yyy__zzz"]
         qs = self._callFUT(User.objects.filter(skills__id=1), fields)
-        self.assertIn('SELECT "auth_user"."id", "auth_user"."username"', (str(qs.query)))
+        self.assertIn('SELECT "auth_user"."id", "auth_user"."username" FROM', (str(qs.query)))
 
     def test_safe_only__with_select_related(self):
-        from django.contrib.auth.models import Permission
+        from django.contrib.redirects.models import Redirect
         fields = ["id"]
-        qs = Permission.objects.select_related("content_type")
+        qs = Redirect.objects.select_related("site")
+        self.assertIn('JOIN', str(qs.query))
+        qs = self._callFUT(qs, fields)
+        self.assertNotIn('JOIN', str(qs.query))
+
+    def test_safe_only__with_select_related__nested(self):
+        from django.contrib.redirects.models import Redirect
+        fields = ["site__name"]
+        qs = Redirect.objects.select_related("site")
+        self.assertIn('JOIN', str(qs.query))
         qs = self._callFUT(qs, fields)
         print(qs.query)
+        # self.assertIn('JOIN', str(qs.query))

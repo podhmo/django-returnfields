@@ -84,9 +84,15 @@ default_name_collector = CorrectNameCollector()
 
 def safe_only(qs, name_list, collector=default_name_collector):
     fields = collector.collect(qs.model, name_list, with_relation=True)
+    if qs.query.select_related and hasattr(qs.query.select_related, "items"):
+        qs = qs._clone()
+        qs.query.select_related = {k: v for k, v in qs.query.select_related.items() if k in fields}
     return qs.only(*fields)
 
 
 def safe_defer(qs, name_list, collector=default_name_collector):
     fields = collector.collect(qs.model, name_list, with_relation=False)
+    if qs.query.select_related and hasattr(qs.query.select_related, "items"):
+        qs = qs._clone()
+        qs.query.select_related = {k: v for k, v in qs.query.select_related.items() if k not in fields}
     return qs.defer(*fields)
