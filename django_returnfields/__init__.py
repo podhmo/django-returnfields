@@ -63,8 +63,8 @@ class RequestValue(object):
 
 
 class QueryOptimizer(object):
-    view_optimize_query_method_name = "optimize_queryset"
-    view_optimize_intercept = "optimize_intercept"
+    view_aggressive_query_method_name = "aggressive_queryset"
+    view_aggressive_intercept = "aggressive_intercept"
 
     def __init__(self, restriction):
         self.restriction = restriction
@@ -77,19 +77,20 @@ class QueryOptimizer(object):
 
     def _as_query(self, context, data):
         # if paginated view, then data is maybe list type object.
+        # and `order_by, group_by, select_related, ..` hints are dropped.
         qs, is_query = aggressive.revive_query(data)
         if not is_query:
             if qs:
                 logger.info("%s is not queryset object", qs)
             return qs
 
-        # get optimize query from view object
+        # get optimized query from view object
         if "view" in context:
             view = context["view"]
-            optimize_fn_by_view = getattr(view, self.view_optimize_query_method_name, None)
+            optimize_fn_by_view = getattr(view, self.view_aggressive_query_method_name, None)
             if optimize_fn_by_view:
                 qs = optimize_fn_by_view(qs)
-                if getattr(view, self.view_optimize_intercept, False):
+                if getattr(view, self.view_aggressive_intercept, False):
                     return qs
         return qs
 
