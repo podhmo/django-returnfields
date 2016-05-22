@@ -58,21 +58,6 @@ class RequestValue(object):
             context[INACTIVE_KEY] = True
             return False
 
-    def make_initial_frame(self, context, include_key, exclude_key):
-        frame = {
-            "name": "",
-            "toplevel": True,
-            include_key: self.parse(context, include_key),
-            exclude_key: self.parse(context, exclude_key),
-        }
-        try:
-            logger.debug("restriction: start with %s", frame)
-        except Exception:
-            logger.warn("unexpected arguments: %s", self.get(context), exc_info=True)
-        if frame[exclude_key] and not frame[include_key]:
-            frame[include_key] = [ALL]
-        return frame
-
 
 class QueryOptimizer(object):
     def optimize_query_aggressively(self, frame, data, optimize_type):
@@ -119,7 +104,19 @@ class Restriction(object):
     def setup(self, context, many=False):
         if self.frame_management.has_frame(context):
             return self.frame_management.is_toplevel(context)
-        frame = self.request_value.make_initial_frame(context, self.include_key, self.exclude_key)
+        frame = {
+            "name": "",
+            "toplevel": True,
+            self.include_key: self.request_value.parse(context, self.include_key),
+            self.exclude_key: self.request_value.parse(context, self.exclude_key),
+        }
+        try:
+            logger.debug("restriction: start with %s", frame)
+        except Exception:
+            logger.warn("unexpected arguments: %s", self.request_value.get(context), exc_info=True)
+        if frame[self.exclude_key] and not frame[self.include_key]:
+            frame[self.include_key] = [ALL]
+
         self.frame_management.init_frame(context, frame)
         return True
 
