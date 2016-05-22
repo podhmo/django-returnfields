@@ -143,17 +143,20 @@ class Restriction(object):
     def to_representation(self, serializer, data):
         field_name = serializer.field_name
         frame = self.frame_management.current_frame(serializer.context)
+        new_frame = self.make_new_frame(frame, field_name)
+        self.frame_management.push_frame(serializer.context, new_frame)
+        ret = serializer._to_representation(data)
+        self.frame_management.pop_frame(serializer.context)
+        return ret
 
+    def make_new_frame(self, frame, field_name):
         prefix = "{}__".format(field_name)
         new_frame = {
             "name": field_name,
             self.include_key: truncate_for_child(frame[self.include_key], prefix, field_name),
             self.exclude_key: truncate_for_child(frame[self.exclude_key], prefix, field_name)
         }
-        self.frame_management.push_frame(serializer.context, new_frame)
-        ret = serializer._to_representation(data)
-        self.frame_management.pop_frame(serializer.context)
-        return ret
+        return new_frame
 
     def __hash__(self):
         return hash((self.__class__, self.include_key, self.exclude_key))
