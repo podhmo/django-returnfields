@@ -85,17 +85,26 @@ class QueryOptimizer(object):
 
 
 class FrameManagement(object):
-    def current_frame(self, serializer):
-        return serializer.context[PATH_KEY][-1]
+    def current_frame(self, context):
+        return context[PATH_KEY][-1]
 
-    def push_frame(self, serializer, frame):
-        # print("{}>>> {}".format(" " * len(serializer.context[PATH_KEY]), frame))
-        return serializer.context[PATH_KEY].append(frame)
+    def push_frame(self, context, frame):
+        # print("{}>>> {}".format(" " * len(context[PATH_KEY]), frame))
+        return context[PATH_KEY].append(frame)
 
-    def pop_frame(self, serializer):
-        frame = serializer.context[PATH_KEY].pop()
-        # print("{}<<< {}".format(" " * len(serializer.context[PATH_KEY]), frame))
+    def pop_frame(self, context):
+        frame = context[PATH_KEY].pop()
+        # print("{}<<< {}".format(" " * len(context[PATH_KEY]), frame))
         return frame
+
+    def is_toplevel(self, context):
+        return context[PATH_KEY][-1].get("toplevel", False)
+
+    def has_frame(self, context):
+        return PATH_KEY in context
+
+    def init_frame(self, context, frame):
+        context[PATH_KEY] = [frame]
 
 
 class Restriction(object):
@@ -108,17 +117,17 @@ class Restriction(object):
         self.active_check_keys = (self.include_key, self.exclude_key)
 
     def setup(self, context, many=False):
-        if PATH_KEY in context:
-            return context[PATH_KEY][-1].get("toplevel", False)
+        if self.frame_management.has_frame(context):
+            return self.frame_management.is_toplevel(context)
         frame = self.request_value.make_initial_frame(context, self.include_key, self.exclude_key)
-        context[PATH_KEY] = [frame]
+        self.frame_management.init_frame(context, frame)
         return True
 
     def is_active(self, context):
         return self.request_value.is_active(context, self.active_check_keys)
 
     def to_restricted_fields(self, serializer, fields):
-        frame = self.frame_management.current_frame(serializer)
+        frame = self.frame_management.current_frame(serializer.context)
         return_fields = frame[self.include_key]
         if ALL in return_fields:
             ret = fields
@@ -136,7 +145,7 @@ class Restriction(object):
 
     def to_representation(self, serializer, data):
         field_name = serializer.field_name
-        frame = self.frame_management.current_frame(serializer)
+        frame = self.frame_management.current_frame(serializer.context)
 
         prefix = "{}__".format(field_name)
         new_frame = {
@@ -144,9 +153,9 @@ class Restriction(object):
             self.include_key: truncate_for_child(frame[self.include_key], prefix, field_name),
             self.exclude_key: truncate_for_child(frame[self.exclude_key], prefix, field_name)
         }
-        self.frame_management.push_frame(serializer, new_frame)
+        self.frame_management.push_frame(serializer.context, new_frame)
         ret = serializer._to_representation(data)
-        self.frame_management.pop_frame(serializer)
+        self.frame_management.pop_frame(serializer.context)
         return ret
 
     def __hash__(self):
