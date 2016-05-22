@@ -23,12 +23,6 @@ class RestrictFeatureTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK, msg=extract_error_message(response))
         self.assertEqual(set(response.data[0].keys()), {"url", "username"})
 
-    def test_restricted2(self):
-        path = "/api/users/?return_fields=username, url, is_staff"
-        response = self.client.get(path, format="json")
-        self.assertEqual(response.status_code, status.HTTP_200_OK, msg=extract_error_message(response))
-        self.assertEqual(set(response.data[0].keys()), {"url", "username", "is_staff"})
-
     def test_restricted__invalid_names(self):
         path = "/api/users/?return_fields=username, xxxx"
         response = self.client.get(path, format="json")

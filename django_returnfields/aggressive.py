@@ -113,7 +113,6 @@ def safe_only(qs, name_list, collector=default_name_collector):
             s.update(qs.query.select_related.keys())
         if qs._prefetch_related_lookups:
             qs._prefetch_related_lookups = [k for k in qs._prefetch_related_lookups if k in s]
-
     return qs.only(*pair.for_select)
 
 
@@ -129,3 +128,18 @@ def safe_defer(qs, name_list, collector=default_name_collector):
         if qs._prefetch_related_lookups:
             qs._prefetch_related_lookups = [k for k in qs._prefetch_related_lookups if k not in s]
     return qs.defer(*pair.for_select)
+
+
+def revive_query(query_or_collection):
+    if hasattr(query_or_collection, "query"):
+        return query_or_collection, True
+    elif isinstance(query_or_collection, (list, tuple)) and not len(query_or_collection) == 0:
+        return _revive_query(query_or_collection), True
+    else:
+        return query_or_collection, False
+
+
+def _revive_query(xs):
+    pks = [x.pk for x in xs]
+    # order by..
+    return xs[0].__class__.objects.filter(pk__in=pks)

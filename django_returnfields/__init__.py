@@ -63,10 +63,37 @@ class RequestValue(object):
 
 
 class QueryOptimizer(object):
+    view_optimize_query_method_name = "optimize_queryset"
+    view_optimize_intercept = "optimize_intercept"
+
     def __init__(self, restriction):
         self.restriction = restriction
 
-    def detect_optimize_type(self, frame):
+    def optimize_query(self, context, instance):
+        frame = self.restriction.frame_management.current_frame(context)
+        optimize_type = self.restriction.query_optimizer._detect_optimize_type(frame)
+        qs = self._as_query(context, instance)
+        return self._optimize_query(frame, qs, optimize_type)
+
+    def _as_query(self, context, data):
+        # if paginated view, then data is maybe list type object.
+        qs, is_query = aggressive.revive_query(data)
+        if not is_query:
+            if qs:
+                logger.info("%s is not queryset object", qs)
+            return qs
+
+        # get optimize query from view object
+        if "view" in context:
+            view = context["view"]
+            optimize_fn_by_view = getattr(view, self.view_optimize_query_method_name, None)
+            if optimize_fn_by_view:
+                qs = optimize_fn_by_view(qs)
+                if getattr(view, self.view_optimize_intercept, False):
+                    return qs
+        return qs
+
+    def _detect_optimize_type(self, frame):
         if frame.get(self.restriction.include_key, None) and not frame.get(self.restriction.exclude_key, None):
             return "include"
         elif frame.get(self.restriction.exclude_key, None):
@@ -74,7 +101,7 @@ class QueryOptimizer(object):
         else:
             return None
 
-    def optimize_query(self, frame, query, optimize_type):
+    def _optimize_query(self, frame, query, optimize_type):
         if hasattr(query, "all"):
             if optimize_type == 'exclude':
                 return aggressive.safe_defer(query.all(), frame[self.restriction.exclude_key])
@@ -259,9 +286,7 @@ def list_serializer_factory(serializer_class, restriction=_default_restriction):
                     return serializer_class(instance, **kwargs)
                 restriction.setup(context, many=True)
                 if restriction.can_optimize(context):
-                    frame = restriction.frame_management.current_frame(context)
-                    optimize_type = restriction.query_optimizer.detect_optimize_type(frame)
-                    instance = restriction.query_optimizer.optimize_query(frame, instance, optimize_type)
+                    instance = restriction.query_optimizer.optimize_query(context, instance)
             return super(ReturnFieldsListSerializer, cls).__new__(cls, instance, **kwargs)
 
         # override
