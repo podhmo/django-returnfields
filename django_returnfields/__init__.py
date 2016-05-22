@@ -46,6 +46,9 @@ class RequestValue(object):
         fields_names_string = self.get(context).get(key, "")
         return [field_name.strip() for field_name in fields_names_string.split(",") if field_name]
 
+    def can_optimize(self, context):
+        return self.get(context).get("aggressive", False)
+
     def is_active(self, context, active_check_keys):
         if PATH_KEY in context:
             return True
@@ -60,13 +63,24 @@ class RequestValue(object):
 
 
 class QueryOptimizer(object):
-    def optimize_query_aggressively(self, frame, data, optimize_type):
-        if hasattr(data, "all"):
+    def __init__(self, restriction):
+        self.restriction = restriction
+
+    def detect_optimize_type(self, frame):
+        if frame.get(self.restriction.include_key, None) and not frame.get(self.restriction.exclude_key, None):
+            return "include"
+        elif frame.get(self.restriction.exclude_key, None):
+            return "exclude"
+        else:
+            return None
+
+    def optimize_query(self, frame, query, optimize_type):
+        if hasattr(query, "all"):
             if optimize_type == 'exclude':
-                return aggressive.safe_defer(data.all(), frame[self.exclude_key])
+                return aggressive.safe_defer(query.all(), frame[self.restriction.exclude_key])
             elif optimize_type == 'include':
-                return aggressive.safe_only(data.all(), frame[self.include_key])
-        return data
+                return aggressive.safe_only(query.all(), frame[self.restriction.include_key])
+        return query
 
 
 class FrameManagement(object):
@@ -93,10 +107,11 @@ class FrameManagement(object):
 
 
 class Restriction(object):
-    def __init__(self, request_value, frame_management,
+    def __init__(self, request_value, frame_management, query_optimizer_cls,
                  include_key=INCLUDE_KEY, exclude_key=EXCLUDE_KEY):
         self.request_value = request_value
         self.frame_management = frame_management
+        self.query_optimizer = query_optimizer_cls(self)
         self.include_key = include_key
         self.exclude_key = exclude_key
         self.active_check_keys = (self.include_key, self.exclude_key)
@@ -110,6 +125,9 @@ class Restriction(object):
 
     def is_active(self, context):
         return self.request_value.is_active(context, self.active_check_keys)
+
+    def can_optimize(self, context):
+        return self.request_value.can_optimize(context)
 
     def to_restricted_fields(self, serializer, fields):
         frame = self.frame_management.current_frame(serializer.context)
@@ -169,7 +187,7 @@ class Restriction(object):
 
 
 def restriction_factory(**kwargs):
-    return Restriction(RequestValue(), FrameManagement(), **kwargs)
+    return Restriction(RequestValue(), FrameManagement(), QueryOptimizer, **kwargs)
 
 _cache = {}
 _default_restriction = restriction_factory(include_key=INCLUDE_KEY, exclude_key=EXCLUDE_KEY)
@@ -234,13 +252,17 @@ def list_serializer_factory(serializer_class, restriction=_default_restriction):
 
     class ReturnFieldsListSerializer(serializer_class):
         # override
-        def __new__(cls, *args, **kwargs):
+        def __new__(cls, instance=None, **kwargs):
             context = kwargs.get("context")
             if context:
                 if not restriction.is_active(context):
-                    return serializer_class(*args, **kwargs)
+                    return serializer_class(instance, **kwargs)
                 restriction.setup(context, many=True)
-            return super(ReturnFieldsListSerializer, cls).__new__(cls, *args, **kwargs)
+                if restriction.can_optimize(context):
+                    frame = restriction.frame_management.current_frame(context)
+                    optimize_type = restriction.query_optimizer.detect_optimize_type(frame)
+                    instance = restriction.query_optimizer.optimize_query(frame, instance, optimize_type)
+            return super(ReturnFieldsListSerializer, cls).__new__(cls, instance, **kwargs)
 
         # override
         def to_representation(self, data):
