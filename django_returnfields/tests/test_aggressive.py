@@ -62,68 +62,93 @@ class ExtractCandidatesTests(TestCase):
         self.assertEqual(tuple(sorted(candidates.keys())), tuple(sorted(expected)))
 
 
-class CollectorTests(TestCase):
+class ExtractorTests(TestCase):
     def _makeOne(self):
         from django_returnfields.aggressive import HintExtractor
         return HintExtractor()
 
-    def _callFUT(self, extractor, name_list):
-        return extractor.extract(m.Item, name_list)
+    def _makeInspector(self):
+        from django_returnfields.aggressive import Inspector
+        return Inspector()
 
     def test_it__flatten(self):
         target = self._makeOne()
-        pair = self._callFUT(target, ["id", "name"])
-        result = tuple(sorted(pair.for_select))
+        result = target.extract(m.Item, ["id", "name"])
+        actual = tuple(sorted(self._makeInspector().collect_for_select_names(result)))
         expected = tuple(sorted(["id", "name"]))
-        self.assertEqual(result, expected)
+        self.assertEqual(actual, expected)
 
-        result = tuple(sorted(pair.for_join))
+        actual = tuple(sorted(self._makeInspector().collect_for_join_names(result)))
         expected = tuple(sorted([]))
-        self.assertEqual(result, expected)
+        self.assertEqual(actual, expected)
 
     def test_it__flaten__with_noisy_names(self):
         target = self._makeOne()
-        pair = self._callFUT(target, ["id", "name", "xxxxx"])
-        result = tuple(sorted(pair.for_select))
+        result = target.extract(m.Item, ["id", "name", "xxxxx"])
+        actual = tuple(sorted(self._makeInspector().collect_for_select_names(result)))
         expected = tuple(sorted(["id", "name"]))
-        self.assertEqual(result, expected)
+        self.assertEqual(actual, expected)
 
-        result = tuple(sorted(pair.for_join))
+        actual = tuple(sorted(self._makeInspector().collect_for_join_names(result)))
         expected = tuple(sorted([]))
-        self.assertEqual(result, expected)
+        self.assertEqual(actual, expected)
 
     def test_it__nested(self):
         target = self._makeOne()
-        pair = self._callFUT(target, ["id", "order__id"])
-        result = tuple(sorted(pair.for_select))
+        result = target.extract(m.Item, ["id", "order__id"])
+        actual = tuple(sorted(self._makeInspector().collect_for_select_names(result)))
         expected = tuple(sorted(["id", "order__id"]))
-        self.assertEqual(result, expected)
+        self.assertEqual(actual, expected)
 
-        result = tuple(sorted(pair.for_join))
+        actual = tuple(sorted(self._makeInspector().collect_for_join_names(result)))
         expected = tuple(sorted([]))
-        self.assertEqual(result, expected)
+        self.assertEqual(actual, expected)
 
     def test_it__nested__with_noisy_relation(self):
         target = self._makeOne()
-        pair = self._callFUT(target, ["id", "order__id", "xxxxx__id"])
-        result = tuple(sorted(pair.for_select))
+        result = target.extract(m.Item, ["id", "order__id", "xxxxx__id"])
+        actual = tuple(sorted(self._makeInspector().collect_for_select_names(result)))
         expected = tuple(sorted(["id", "order__id"]))
-        self.assertEqual(result, expected)
+        self.assertEqual(actual, expected)
 
-        result = tuple(sorted(pair.for_join))
+        actual = tuple(sorted(self._makeInspector().collect_for_join_names(result)))
         expected = tuple(sorted([]))
-        self.assertEqual(result, expected)
+        self.assertEqual(actual, expected)
 
     def test_it__nested__with_noisy_name(self):
         target = self._makeOne()
-        pair = self._callFUT(target, ["id", "order__id", "order__xxxxx"])
-        result = tuple(sorted(pair.for_select))
+        result = target.extract(m.Item, ["id", "order__id", "order__xxxxx"])
+        actual = tuple(sorted(self._makeInspector().collect_for_select_names(result)))
         expected = tuple(sorted(["id", "order__id"]))
-        self.assertEqual(result, expected)
+        self.assertEqual(actual, expected)
 
-        result = tuple(sorted(pair.for_join))
+        actual = tuple(sorted(self._makeInspector().collect_for_join_names(result)))
         expected = tuple(sorted([]))
-        self.assertEqual(result, expected)
+        self.assertEqual(actual, expected)
+
+    # def test_it__nested__join(self):
+    #     target = self._makeOne()
+    #     result = target.extract(m.Customer, ["id", "orders__items__id"], with_relation=True)
+    #     actual = tuple(sorted(self._makeInspector().collect_for_select_names(result)))
+    #     expected = tuple(sorted(["id", "items__id"]))
+    #     # ["id", orders*]
+    #     # ["id", orders=only(Order, items*)]
+    #     # ["id", orders=only(Order, items=only(Item, "id"))]
+    #     m.Customer.objects.only("id", "orders").prefetch_related(Prefetch(
+    #         "orders", queryset=Order.
+    #     )
+    #     print(result)
+    #     print(actual)
+    #     # self.assertEqual(actual, expected)
+    #     # actual = tuple(sorted(self._makeInspector().collect_for_join_names(result)))
+    #     # expected = tuple(sorted([]))
+    #     # self.assertEqual(actual, expected)
+
+    #     # inspector = self._makeInspector()
+    #     # print(m.Item, inspector.collect_without_fk_name_fields(m.Item))
+    #     # print(m.Order, inspector.collect_without_fk_name_fields(m.Order))
+    #     # print(m.Customer, inspector.collect_without_fk_name_fields(m.Customer))
+    #     # print(m.CustomerKarma, inspector.collect_without_fk_name_fields(m.CustomerKarma))
 
 
 class DeferQueryTests(TestCase):

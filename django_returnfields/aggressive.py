@@ -3,12 +3,47 @@ from collections import defaultdict, namedtuple
 import django
 # todo: fk_name
 State = namedtuple("State", "field, is_relation, candidates, fk_name")
-Pair = namedtuple("Pair", "for_select, for_join")
 Hint = namedtuple("Hint", "name, state")
+Result = namedtuple("Result", "name, for_select, for_join, children")
 
 
 def tree():
     return defaultdict(tree)
+
+
+class Inspector(object):
+    def collect_for_select_names(self, result):
+        r = []
+
+        def rec(result, names):
+            for hint in result.for_select:
+                names.append(hint.name)
+                r.append("__".join(names[1:]))
+                names.pop()
+            for subresult in result.children:
+                names.append(subresult.name)
+                rec(subresult, names)
+                names.pop()
+        rec(result, [result.name])
+        return r
+
+    def collect_for_join_names(self, result):
+        r = []
+
+        def rec(result, names):
+            for hint in result.for_join:
+                names.append(hint.name)
+                r.append("__".join(names[1:]))
+                names.pop()
+            for subresult in result.children:
+                names.append(subresult.name)
+                rec(subresult, names)
+                names.pop()
+        rec(result, [result.name])
+        return r
+
+    def collect_without_fk_name_fields(self, model):
+        return [f for f in get_all_fields(model) if not getattr(f, "attname", None)]
 
 
 class HintExtractor(object):
@@ -23,7 +58,8 @@ class HintExtractor(object):
             candidates = self.cache[model] = extract_candidates(model)
         return self.drilldown(candidates, name_list, with_relation=with_relation)
 
-    def drilldown(self, candidates, name_list, with_relation):
+    def drilldown(self, candidates, name_list, with_relation, parent_name=""):
+        print("@", name_list, "@")
         for_select = []
         for_join = []
         relations = defaultdict(list)
@@ -37,22 +73,23 @@ class HintExtractor(object):
                 k, sub_name = name.split("__", 1)
                 relations[k].append(sub_name)
 
+        children = []
         for k, sub_name_list in relations.items():
             s = candidates.get(k)
             if s is None:
                 continue
             if with_relation:
                 if s.fk_name is None:
-                    for_join.append(Hint(name=k, state=s))
+                    if not s.candidates:
+                        s = candidates[k] = new_state(s, extract_candidates(s.field.model))
+                    for_join.append(self.drilldown(s.candidates, sub_name_list, with_relation, parent_name=k))
                     continue  # hmm
                 else:
                     for_select.append(Hint(name=k, state=s))
             if not s.candidates:
                 s = candidates[k] = new_state(s, extract_candidates(s.field.model))
-            pair = self.drilldown(s.candidates, sub_name_list, with_relation)
-            for_select.extend([Hint(name="__".join([k, h.name]), state=h.state) for h in pair.for_select])
-            for_join.extend([Hint(name="__".join([k, h.name])) for h in pair.for_join])
-        return Pair(for_select=for_select, for_join=for_join)
+            children.append(self.drilldown(s.candidates, sub_name_list, with_relation, parent_name=k))
+        return Result(name=parent_name, for_select=for_select, for_join=for_join, children=children)
 
 
 def new_state(s, candidates):
@@ -96,6 +133,8 @@ def extract_candidates(model):
             candidates=None,
             fk_name=getattr(f, "attname", None)
         )
+        if not s.fk_name:
+            print(model, s.field.name)
         d[f.name] = s
     return d
 
