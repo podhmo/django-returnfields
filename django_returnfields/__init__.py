@@ -13,6 +13,7 @@ logger = logging.getLogger(__name__)
 INCLUDE_KEY = "return_fields"
 EXCLUDE_KEY = "skip_fields"
 PATH_KEY = "_drf__path"  # {name: string, return_fields: string[], skip_fields: string[]}[]
+INACTIVE_KEY = "_drf__inactive"
 AGGRESSIVE_KEY = "_drf__aggressive"  # boolean
 # xxx
 ALL = ":all:"
@@ -36,49 +37,68 @@ def is_already_upgraded(cls):
     return hasattr(cls, "to_restricted_fields")
 
 
+class RequestValue(object):
+    # default is request.GET
+    def get(self, context):
+        return context["request"].GET
+
+    def parse(self, context, key):
+        fields_names_string = self.get(context).get(key, "")
+        return [field_name.strip() for field_name in fields_names_string.split(",") if field_name]
+
+    def is_active(self, context, active_check_keys):
+        if PATH_KEY in context:
+            return True
+        if context.get(INACTIVE_KEY):
+            return False
+        try:
+            values = self.get(context)
+            return any(k in values for k in active_check_keys)
+        except KeyError:
+            context[INACTIVE_KEY] = True
+            return False
+
+    def make_initial_frame(self, context, include_key, exclude_key):
+        frame = {
+            "name": "",
+            include_key: self.parse(context, include_key),
+            exclude_key: self.parse(context, exclude_key),
+        }
+        try:
+            logger.debug("restriction: start with %s", frame)
+        except Exception:
+            logger.warn("unexpected arguments: %s", self.get(context), exc_info=True)
+        if frame[exclude_key] and not frame[include_key]:
+            frame[include_key] = [ALL]
+        return frame
+
+
 class Restriction(object):
-    def __init__(self, include_key=INCLUDE_KEY, exclude_key=EXCLUDE_KEY, path_key=PATH_KEY):
+    def __init__(self, request_value,
+                 include_key=INCLUDE_KEY, exclude_key=EXCLUDE_KEY, path_key=PATH_KEY):
+        self.request_value = request_value
         self.include_key = include_key
         self.exclude_key = exclude_key
         self.path_key = path_key
         self.active_check_keys = (self.include_key, self.exclude_key)
 
-    def setup(self, serializer):
-        if PATH_KEY in serializer.context:
-            return False
+    def is_toplevel(self, serializers):
+        return self.current_frame(serializers).get("toplevel", False)
 
-        frame = {
-            "name": "",
-            self.include_key: self.parse_passed_values(serializer, self.include_key),
-            self.exclude_key: self.parse_passed_values(serializer, self.exclude_key),
-        }
-        try:
-            logger.debug("restriction: start with %s", frame)
-        except Exception:
-            logger.warn("unexpected arguments: %s", self.get_passed_values(serializer), exc_info=True)
-        if frame[self.exclude_key] and not frame[self.include_key]:
-            frame[self.include_key] = [ALL]
-        serializer.context[PATH_KEY] = [frame]
+    def setup(self, context):
+        if PATH_KEY in context:
+            return False
+        frame = self.request_value.make_initial_frame(context, self.include_key, self.exclude_key)
+        context[PATH_KEY] = [frame]
 
         if frame.get(INCLUDE_KEY, None) and not frame.get(EXCLUDE_KEY, None):
-            serializer.context[AGGRESSIVE_KEY] = "include"
+            context[AGGRESSIVE_KEY] = "include"
         elif frame.get(EXCLUDE_KEY, None):
-            serializer.context[AGGRESSIVE_KEY] = "exclude"
+            context[AGGRESSIVE_KEY] = "exclude"
         return True
 
-    def get_passed_values(self, serializer):
-        return serializer.context["request"].GET
-
     def is_active(self, serializer):
-        try:
-            values = self.get_passed_values(serializer)
-        except KeyError:
-            return False
-        return any(k in values for k in self.active_check_keys)
-
-    def parse_passed_values(self, serializer, key):
-        fields_names_string = self.get_passed_values(serializer).get(key, "")
-        return [field_name.strip() for field_name in fields_names_string.split(",") if field_name]
+        return self.request_value.is_active(serializer.context, self.active_check_keys)
 
     def current_frame(self, serializer):
         return serializer.context[self.path_key][-1]
@@ -120,7 +140,7 @@ class Restriction(object):
             self.exclude_key: truncate_for_child(frame[self.exclude_key], prefix, field_name)
         }
         self.push_frame(serializer, new_frame)
-        if many and "aggressive" in self.get_passed_values(serializer):
+        if many and "aggressive" in self.request_value.get(serializer.context):
             data = self.optimize_query_aggressively(new_frame, data, serializer.context.get(AGGRESSIVE_KEY))
         ret = serializer._to_representation(data)
         self.pop_frame(serializer)
@@ -138,9 +158,14 @@ class Restriction(object):
         return hash((self.__class__, self.include_key, self.path_key, self.exclude_key))
 
 _cache = {}
+_default_restriction = Restriction(RequestValue(), include_key=INCLUDE_KEY, exclude_key=EXCLUDE_KEY, path_key=PATH_KEY)
 
 
-def serializer_factory(serializer_class, restriction=Restriction(include_key=INCLUDE_KEY, exclude_key=EXCLUDE_KEY, path_key=PATH_KEY)):
+def restriction_factory(**kwargs):
+    return Restriction(RequestValue(), **kwargs)
+
+
+def serializer_factory(serializer_class, restriction=_default_restriction):
     k = (serializer_class, False, restriction.__hash__())
     if k in _cache:
         return _cache[k]
@@ -149,6 +174,13 @@ def serializer_factory(serializer_class, restriction=Restriction(include_key=INC
         return serializer_class
 
     class ReturnFieldsSerializer(serializer_class):
+        # # override
+        # def __new__(cls, *args, **kwargs):
+        #     context = kwargs.get("context")
+        #     if context:
+        #         restriction.setup(context)
+        #     return super(ReturnFieldsSerializer, cls).__new__(cls, *args, **kwargs)
+
         # override
         def get_fields(self):
             fields = super(ReturnFieldsSerializer, self).get_fields()
@@ -158,7 +190,7 @@ def serializer_factory(serializer_class, restriction=Restriction(include_key=INC
         def to_representation(self, instance):
             if not restriction.is_active(self):
                 return super(ReturnFieldsSerializer, self).to_representation(instance)
-            elif not restriction.setup(self) and not self.field_name:
+            elif not restriction.setup(self.context) and not self.field_name:
                 return super(ReturnFieldsSerializer, self).to_representation(instance)
             return restriction.to_representation(self, instance)
 
@@ -189,7 +221,7 @@ def serializer_factory(serializer_class, restriction=Restriction(include_key=INC
     return ReturnFieldsSerializer
 
 
-def list_serializer_factory(serializer_class, restriction=Restriction(include_key=INCLUDE_KEY, exclude_key=EXCLUDE_KEY, path_key=PATH_KEY)):
+def list_serializer_factory(serializer_class, restriction=_default_restriction):
     k = (serializer_class, True, restriction.__hash__())
     if k in _cache:
         return _cache[k]
@@ -202,7 +234,7 @@ def list_serializer_factory(serializer_class, restriction=Restriction(include_ke
         def to_representation(self, data):
             if not restriction.is_active(self):
                 return super(ReturnFieldsListSerializer, self).to_representation(data)
-            elif not restriction.setup(self) and not self.field_name:
+            elif not restriction.setup(self.context) and not self.field_name:
                 return super(ReturnFieldsListSerializer, self).to_representation(data)
             return restriction.to_representation(self, data, many=True)
 
