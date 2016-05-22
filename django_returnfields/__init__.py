@@ -74,13 +74,37 @@ class RequestValue(object):
         return frame
 
 
+class QueryOptimizer(object):
+    def optimize_query_aggressively(self, frame, data, optimize_type):
+        if hasattr(data, "all"):
+            if optimize_type == 'exclude':
+                return aggressive.safe_defer(data.all(), frame[self.exclude_key])
+            elif optimize_type == 'include':
+                return aggressive.safe_only(data.all(), frame[self.include_key])
+        return data
+
+
+class FrameManagement(object):
+    def current_frame(self, serializer):
+        return serializer.context[PATH_KEY][-1]
+
+    def push_frame(self, serializer, frame):
+        # print("{}>>> {}".format(" " * len(serializer.context[PATH_KEY]), frame))
+        return serializer.context[PATH_KEY].append(frame)
+
+    def pop_frame(self, serializer):
+        frame = serializer.context[PATH_KEY].pop()
+        # print("{}<<< {}".format(" " * len(serializer.context[PATH_KEY]), frame))
+        return frame
+
+
 class Restriction(object):
-    def __init__(self, request_value,
-                 include_key=INCLUDE_KEY, exclude_key=EXCLUDE_KEY, path_key=PATH_KEY):
+    def __init__(self, request_value, frame_management,
+                 include_key=INCLUDE_KEY, exclude_key=EXCLUDE_KEY):
         self.request_value = request_value
+        self.frame_management = frame_management
         self.include_key = include_key
         self.exclude_key = exclude_key
-        self.path_key = path_key
         self.active_check_keys = (self.include_key, self.exclude_key)
 
     def setup(self, context, many=False):
@@ -93,20 +117,8 @@ class Restriction(object):
     def is_active(self, context):
         return self.request_value.is_active(context, self.active_check_keys)
 
-    def current_frame(self, serializer):
-        return serializer.context[self.path_key][-1]
-
-    def push_frame(self, serializer, frame):
-        # print("{}>>> {}".format(" " * len(serializer.context[self.path_key]), frame))
-        return serializer.context[self.path_key].append(frame)
-
-    def pop_frame(self, serializer):
-        frame = serializer.context[self.path_key].pop()
-        # print("{}<<< {}".format(" " * len(serializer.context[self.path_key]), frame))
-        return frame
-
     def to_restricted_fields(self, serializer, fields):
-        frame = self.current_frame(serializer)
+        frame = self.frame_management.current_frame(serializer)
         return_fields = frame[self.include_key]
         if ALL in return_fields:
             ret = fields
@@ -124,7 +136,7 @@ class Restriction(object):
 
     def to_representation(self, serializer, data):
         field_name = serializer.field_name
-        frame = self.current_frame(serializer)
+        frame = self.frame_management.current_frame(serializer)
 
         prefix = "{}__".format(field_name)
         new_frame = {
@@ -132,28 +144,20 @@ class Restriction(object):
             self.include_key: truncate_for_child(frame[self.include_key], prefix, field_name),
             self.exclude_key: truncate_for_child(frame[self.exclude_key], prefix, field_name)
         }
-        self.push_frame(serializer, new_frame)
+        self.frame_management.push_frame(serializer, new_frame)
         ret = serializer._to_representation(data)
-        self.pop_frame(serializer)
+        self.frame_management.pop_frame(serializer)
         return ret
 
-    def optimize_query_aggressively(self, frame, data, optimize_type):
-        if hasattr(data, "all"):
-            if optimize_type == 'exclude':
-                return aggressive.safe_defer(data.all(), frame[self.exclude_key])
-            elif optimize_type == 'include':
-                return aggressive.safe_only(data.all(), frame[self.include_key])
-        return data
-
     def __hash__(self):
-        return hash((self.__class__, self.include_key, self.path_key, self.exclude_key))
-
-_cache = {}
-_default_restriction = Restriction(RequestValue(), include_key=INCLUDE_KEY, exclude_key=EXCLUDE_KEY, path_key=PATH_KEY)
+        return hash((self.__class__, self.include_key, self.exclude_key))
 
 
 def restriction_factory(**kwargs):
-    return Restriction(RequestValue(), **kwargs)
+    return Restriction(RequestValue(), FrameManagement(), **kwargs)
+
+_cache = {}
+_default_restriction = restriction_factory(include_key=INCLUDE_KEY, exclude_key=EXCLUDE_KEY)
 
 
 def serializer_factory(serializer_class, restriction=_default_restriction):
