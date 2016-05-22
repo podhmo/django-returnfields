@@ -104,6 +104,27 @@ class Restriction(object):
     def setup(self, context, many=False):
         if self.frame_management.has_frame(context):
             return self.frame_management.is_toplevel(context)
+        frame = self._make_initial_frame(context)
+        self.frame_management.init_frame(context, frame)
+        return True
+
+    def is_active(self, context):
+        return self.request_value.is_active(context, self.active_check_keys)
+
+    def to_restricted_fields(self, serializer, fields):
+        frame = self.frame_management.current_frame(serializer.context)
+        return self._make_new_fields(frame, fields)
+
+    def to_representation(self, serializer, data):
+        field_name = serializer.field_name
+        frame = self.frame_management.current_frame(serializer.context)
+        new_frame = self._make_new_frame(frame, field_name)
+        self.frame_management.push_frame(serializer.context, new_frame)
+        ret = serializer._to_representation(data)
+        self.frame_management.pop_frame(serializer.context)
+        return ret
+
+    def _make_initial_frame(self, context):
         frame = {
             "name": "",
             "toplevel": True,
@@ -116,40 +137,25 @@ class Restriction(object):
             logger.warn("unexpected arguments: %s", self.request_value.get(context), exc_info=True)
         if frame[self.exclude_key] and not frame[self.include_key]:
             frame[self.include_key] = [ALL]
+        return frame
 
-        self.frame_management.init_frame(context, frame)
-        return True
-
-    def is_active(self, context):
-        return self.request_value.is_active(context, self.active_check_keys)
-
-    def to_restricted_fields(self, serializer, fields):
-        frame = self.frame_management.current_frame(serializer.context)
+    def _make_new_fields(self, frame, fields):
         return_fields = frame[self.include_key]
         if ALL in return_fields:
-            ret = fields
+            new_fields = fields
         else:
             # include filter
-            ret = OrderedDict()
+            new_fields = OrderedDict()
             relations = [field_name.split("__", 2)[0] for field_name in return_fields]
             for k in fields.keys():
                 if k in return_fields or k in relations:
-                    ret[k] = fields[k]
+                    new_fields[k] = fields[k]
         # exclude filter
         for k in frame[self.exclude_key]:
-            ret.pop(k, None)
-        return ret
+            new_fields.pop(k, None)
+        return new_fields
 
-    def to_representation(self, serializer, data):
-        field_name = serializer.field_name
-        frame = self.frame_management.current_frame(serializer.context)
-        new_frame = self.make_new_frame(frame, field_name)
-        self.frame_management.push_frame(serializer.context, new_frame)
-        ret = serializer._to_representation(data)
-        self.frame_management.pop_frame(serializer.context)
-        return ret
-
-    def make_new_frame(self, frame, field_name):
+    def _make_new_frame(self, frame, field_name):
         prefix = "{}__".format(field_name)
         new_frame = {
             "name": field_name,
