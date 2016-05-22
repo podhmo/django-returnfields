@@ -64,11 +64,11 @@ class ExtractCandidatesTests(TestCase):
 
 class CollectorTests(TestCase):
     def _makeOne(self):
-        from django_returnfields.aggressive import CorrectNameCollector
-        return CorrectNameCollector()
+        from django_returnfields.aggressive import HintExtractor
+        return HintExtractor()
 
-    def _callFUT(self, collector, name_list):
-        return collector.collect(m.Item, name_list)
+    def _callFUT(self, extractor, name_list):
+        return extractor.extract(m.Item, name_list)
 
     def test_it__flatten(self):
         target = self._makeOne()

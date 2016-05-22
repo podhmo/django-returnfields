@@ -4,18 +4,19 @@ import django
 # todo: fk_name
 State = namedtuple("State", "field, is_relation, candidates, fk_name")
 Pair = namedtuple("Pair", "for_select, for_join")
+Hint = namedtuple("Hint", "name, state")
 
 
 def tree():
     return defaultdict(tree)
 
 
-class CorrectNameCollector(object):
+class HintExtractor(object):
     def __init__(self):
         # model -> tree
         self.cache = {}
 
-    def collect(self, model, name_list, with_relation=False):
+    def extract(self, model, name_list, with_relation=False):
         try:
             candidates = self.cache[model]
         except KeyError:
@@ -31,7 +32,7 @@ class CorrectNameCollector(object):
             if "__" not in name:
                 if s is None:
                     continue
-                for_select.append(name)
+                for_select.append(Hint(name=name, state=s))
             else:
                 k, sub_name = name.split("__", 1)
                 relations[k].append(sub_name)
@@ -42,15 +43,15 @@ class CorrectNameCollector(object):
                 continue
             if with_relation:
                 if s.fk_name is None:
-                    for_join.append(k)
+                    for_join.append(Hint(name=k, state=s))
                     continue  # hmm
                 else:
-                    for_select.append(k)
+                    for_select.append(Hint(name=k, state=s))
             if not s.candidates:
                 s = candidates[k] = new_state(s, extract_candidates(s.field.model))
             pair = self.drilldown(s.candidates, sub_name_list, with_relation)
-            for_select.extend(["__".join([k, suffix]) for suffix in pair.for_select])
-            for_join.extend(["__".join([k, suffix]) for suffix in pair.for_join])
+            for_select.extend([Hint(name="__".join([k, h.name]), state=h.state) for h in pair.for_select])
+            for_join.extend([Hint(name="__".join([k, h.name])) for h in pair.for_join])
         return Pair(for_select=for_select, for_join=for_join)
 
 
@@ -99,11 +100,11 @@ def extract_candidates(model):
     return d
 
 
-default_name_collector = CorrectNameCollector()
+default_hint_extractor = HintExtractor()
 
 
-def safe_only(qs, name_list, collector=default_name_collector):
-    pair = collector.collect(qs.model, name_list, with_relation=True)
+def safe_only(qs, name_list, extractor=default_hint_extractor):
+    pair = extractor.extract(qs.model, name_list, with_relation=True)
     if qs.query.select_related or qs._prefetch_related_lookups:
         qs = qs._clone()
         s = set(pair.for_join)
@@ -116,8 +117,8 @@ def safe_only(qs, name_list, collector=default_name_collector):
     return qs.only(*pair.for_select)
 
 
-def safe_defer(qs, name_list, collector=default_name_collector):
-    pair = collector.collect(qs.model, name_list, with_relation=False)
+def safe_defer(qs, name_list, extractor=default_hint_extractor):
+    pair = extractor.extract(qs.model, name_list, with_relation=False)
     if qs.query.select_related or qs._prefetch_related_lookups:
         qs = qs._clone()
         s = set(pair.for_join)
@@ -130,16 +131,12 @@ def safe_defer(qs, name_list, collector=default_name_collector):
     return qs.defer(*pair.for_select)
 
 
-def revive_query(query_or_collection):
-    if hasattr(query_or_collection, "query"):
-        return query_or_collection, True
-    elif isinstance(query_or_collection, (list, tuple)) and not len(query_or_collection) == 0:
-        return _revive_query(query_or_collection), True
+def revive_query(query_or_extraction):
+    if hasattr(query_or_extraction, "query"):
+        return query_or_extraction, True
+    elif isinstance(query_or_extraction, (list, tuple)) and not len(query_or_extraction) == 0:
+        pks = [x.pk for x in query_or_extraction]
+        # order by is dropped..
+        return query_or_extraction[0].__class__.objects.filter(pk__in=pks), True
     else:
-        return query_or_collection, False
-
-
-def _revive_query(xs):
-    pks = [x.pk for x in xs]
-    # order by..
-    return xs[0].__class__.objects.filter(pk__in=pks)
+        return query_or_extraction, False
