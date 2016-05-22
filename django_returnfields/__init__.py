@@ -61,6 +61,7 @@ class RequestValue(object):
     def make_initial_frame(self, context, include_key, exclude_key):
         frame = {
             "name": "",
+            "toplevel": True,
             include_key: self.parse(context, include_key),
             exclude_key: self.parse(context, exclude_key),
         }
@@ -82,23 +83,15 @@ class Restriction(object):
         self.path_key = path_key
         self.active_check_keys = (self.include_key, self.exclude_key)
 
-    def is_toplevel(self, serializers):
-        return self.current_frame(serializers).get("toplevel", False)
-
-    def setup(self, context):
+    def setup(self, context, many=False):
         if PATH_KEY in context:
-            return False
+            return context[PATH_KEY][-1].get("toplevel", False)
         frame = self.request_value.make_initial_frame(context, self.include_key, self.exclude_key)
         context[PATH_KEY] = [frame]
-
-        if frame.get(INCLUDE_KEY, None) and not frame.get(EXCLUDE_KEY, None):
-            context[AGGRESSIVE_KEY] = "include"
-        elif frame.get(EXCLUDE_KEY, None):
-            context[AGGRESSIVE_KEY] = "exclude"
         return True
 
-    def is_active(self, serializer):
-        return self.request_value.is_active(serializer.context, self.active_check_keys)
+    def is_active(self, context):
+        return self.request_value.is_active(context, self.active_check_keys)
 
     def current_frame(self, serializer):
         return serializer.context[self.path_key][-1]
@@ -129,7 +122,7 @@ class Restriction(object):
             ret.pop(k, None)
         return ret
 
-    def to_representation(self, serializer, data, many=True):
+    def to_representation(self, serializer, data):
         field_name = serializer.field_name
         frame = self.current_frame(serializer)
 
@@ -140,8 +133,6 @@ class Restriction(object):
             self.exclude_key: truncate_for_child(frame[self.exclude_key], prefix, field_name)
         }
         self.push_frame(serializer, new_frame)
-        if many and "aggressive" in self.request_value.get(serializer.context):
-            data = self.optimize_query_aggressively(new_frame, data, serializer.context.get(AGGRESSIVE_KEY))
         ret = serializer._to_representation(data)
         self.pop_frame(serializer)
         return ret
@@ -174,13 +165,6 @@ def serializer_factory(serializer_class, restriction=_default_restriction):
         return serializer_class
 
     class ReturnFieldsSerializer(serializer_class):
-        # # override
-        # def __new__(cls, *args, **kwargs):
-        #     context = kwargs.get("context")
-        #     if context:
-        #         restriction.setup(context)
-        #     return super(ReturnFieldsSerializer, cls).__new__(cls, *args, **kwargs)
-
         # override
         def get_fields(self):
             fields = super(ReturnFieldsSerializer, self).get_fields()
@@ -188,9 +172,9 @@ def serializer_factory(serializer_class, restriction=_default_restriction):
 
         # override
         def to_representation(self, instance):
-            if not restriction.is_active(self):
+            if not restriction.is_active(self.context):
                 return super(ReturnFieldsSerializer, self).to_representation(instance)
-            elif not restriction.setup(self.context) and not self.field_name:
+            elif not restriction.setup(self.context, many=False) and not self.field_name:
                 return super(ReturnFieldsSerializer, self).to_representation(instance)
             return restriction.to_representation(self, instance)
 
@@ -198,7 +182,7 @@ def serializer_factory(serializer_class, restriction=_default_restriction):
             return super(ReturnFieldsSerializer, self).to_representation(instance)
 
         def to_restricted_fields(self, fields):
-            if restriction.is_active(self):
+            if restriction.is_active(self.context):
                 return restriction.to_restricted_fields(self, fields)
             else:
                 return fields
@@ -231,12 +215,21 @@ def list_serializer_factory(serializer_class, restriction=_default_restriction):
 
     class ReturnFieldsListSerializer(serializer_class):
         # override
+        def __new__(cls, *args, **kwargs):
+            context = kwargs.get("context")
+            if context:
+                if not restriction.is_active(context):
+                    return serializer_class(*args, **kwargs)
+                restriction.setup(context, many=True)
+            return super(ReturnFieldsListSerializer, cls).__new__(cls, *args, **kwargs)
+
+        # override
         def to_representation(self, data):
-            if not restriction.is_active(self):
+            if not restriction.is_active(self.context):
                 return super(ReturnFieldsListSerializer, self).to_representation(data)
-            elif not restriction.setup(self.context) and not self.field_name:
+            elif not restriction.setup(self.context, many=True) and not self.field_name:
                 return super(ReturnFieldsListSerializer, self).to_representation(data)
-            return restriction.to_representation(self, data, many=True)
+            return restriction.to_representation(self, data)
 
         def _to_representation(self, data):
             return super(ReturnFieldsListSerializer, self).to_representation(data)
