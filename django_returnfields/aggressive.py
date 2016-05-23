@@ -2,13 +2,167 @@
 from collections import defaultdict, namedtuple
 import django
 # todo: fk_name
-State = namedtuple("State", "field, is_relation, candidates, fk_name")
-Hint = namedtuple("Hint", "name, state")
-Result = namedtuple("Result", "name, for_select, for_join, children")
+Hint = namedtuple(
+    "Hint",
+    "name, is_relation, fk_name, field"
+)
+TmpResult = namedtuple(
+    "TmpResult",
+    "name, current, children"
+)
 
 
 def tree():
     return defaultdict(tree)
+
+NOREL = ":norel:"
+REL = ":rel:"
+ALL = ":all:"
+
+Result = namedtuple(
+    "Result",
+    "fields, one_to_onerel, onerel_to_one, one_to_many, many_to_one, many_to_manyrel, manyrel_to_many"
+)
+
+
+def repr_result(self):
+    values = []
+    for k, v in self._asdict().items():
+        if v:
+            values.append("{}={!r}".format(k, v))
+    return "{}({})".format(self.__class__.__name__, ", ".join(values))
+Result.__repr__ = repr_result
+
+
+class HintIterator(object):
+    def __init__(self, d, tokens):
+        self.d = d
+        self.tokens = tokens
+
+    def parse_token(self, t):
+        if t == ALL:
+            for s in self.d.values():
+                yield s
+        elif t == NOREL:
+            for s in self.d.values():
+                if not s.is_relation:
+                    yield s
+        else:
+            s = self.d.get(t)
+            if s is not None:
+                yield s
+
+    def clone(self, tokens):
+        return self.__class__(self.d, tokens)
+
+    def __iter__(self):
+        hist = set()
+        for t in self.tokens:
+            for s in self.parse_token(t):
+                if s not in hist:
+                    hist.add(s)
+                    yield s
+
+
+class HintMap(object):
+    iterator_cls = HintIterator
+
+    def __init__(self):
+        # model -> tree
+        self.cache = {}
+
+    def extract(self, model):
+        d = tree()
+        for f in get_all_fields(model):
+            # if not hasattr(f, "attname"):
+            #     # print("model: {}.{} does not have attname".format(model, f))
+            #     continue
+            s = Hint(
+                name=f.name,
+                is_relation=f.is_relation,
+                fk_name=getattr(f, "attname", None),
+                field=f,
+            )
+            d[f.name] = s
+        return d
+
+    def load(self, model):
+        d = self.cache.get(model)
+        if d is None:
+            d = self.cache[model] = self.extract(model)
+        return d
+
+    def iterator(self, model, tokens):
+        return self.iterator_cls(self.load(model), tokens)
+
+
+class HintExtractor(object):
+    ALL = "*"
+
+    def __init__(self):
+        self.hintmap = HintMap()
+
+    def extract(self, model, name_list, with_relation=False):
+        return self.drilldown(model, name_list, with_relation=with_relation)
+
+    def classify(self, hint):
+        print(dir(hint.field))
+
+    def drilldown(self, model, name_list, with_relation, parent_name=""):
+        hints = []
+        names = []
+        rels = defaultdict(list)
+        for name in names:
+            if self.ALL == name:
+                names.append(NOREL)
+            elif "__" not in name:
+                names.append(name)
+            else:
+                prefix, sub_name = name.split("__", 1)
+                if self.ALL == prefix:
+                    names.append(REL)
+                rels[prefix].append(sub_name)
+
+        existing_rels = []
+        iterator = self.hintmap.iterator(model, names)
+        for hint in iterator:
+            hints.append(hint)
+            if hint.is_relation:
+                existing_rels.append(hint)
+
+        children = []
+        for hint in existing_rels:
+            children.append(self.drilldown(hint.field.model, rels[hint.name], with_relation, parent_name=hint.name))
+        return TmpResult(name=parent_name, current=hints, children=children)
+
+
+def new_hint(s, hint):
+    return Hint(
+        field=s.field,
+        is_relation=s.is_relation,
+        hint=hint,
+        fk_name=s.fk_name
+    )
+
+
+if django.VERSION >= (1, 8):
+    def get_all_fields(m):
+        return m._meta.get_fields()
+else:
+    # planning to drop 1.7
+    from django.db.models.fields.related import RelatedField
+
+    class FieldAdapter(object):
+        def __init__(self, f):
+            self.f = f
+            self.is_relation = isinstance(f, RelatedField)
+
+        def __getattr__(self, k):
+            return getattr(self.f, k)
+
+    def get_all_fields(m):
+        xs = [m._meta._name_map.get(name, None)[0] for name in m._meta.get_all_field_names()]
+        return [FieldAdapter(x) for x in xs if x]
 
 
 class Inspector(object):
@@ -44,99 +198,6 @@ class Inspector(object):
 
     def collect_without_fk_name_fields(self, model):
         return [f for f in get_all_fields(model) if not getattr(f, "attname", None)]
-
-
-class HintExtractor(object):
-    def __init__(self):
-        # model -> tree
-        self.cache = {}
-
-    def extract(self, model, name_list, with_relation=False):
-        try:
-            candidates = self.cache[model]
-        except KeyError:
-            candidates = self.cache[model] = extract_candidates(model)
-        return self.drilldown(candidates, name_list, with_relation=with_relation)
-
-    def drilldown(self, candidates, name_list, with_relation, parent_name=""):
-        print("@", name_list, "@")
-        for_select = []
-        for_join = []
-        relations = defaultdict(list)
-        for name in name_list:
-            s = candidates.get(name)
-            if "__" not in name:
-                if s is None:
-                    continue
-                for_select.append(Hint(name=name, state=s))
-            else:
-                k, sub_name = name.split("__", 1)
-                relations[k].append(sub_name)
-
-        children = []
-        for k, sub_name_list in relations.items():
-            s = candidates.get(k)
-            if s is None:
-                continue
-            if with_relation:
-                if s.fk_name is None:
-                    if not s.candidates:
-                        s = candidates[k] = new_state(s, extract_candidates(s.field.model))
-                    for_join.append(self.drilldown(s.candidates, sub_name_list, with_relation, parent_name=k))
-                    continue  # hmm
-                else:
-                    for_select.append(Hint(name=k, state=s))
-            if not s.candidates:
-                s = candidates[k] = new_state(s, extract_candidates(s.field.model))
-            children.append(self.drilldown(s.candidates, sub_name_list, with_relation, parent_name=k))
-        return Result(name=parent_name, for_select=for_select, for_join=for_join, children=children)
-
-
-def new_state(s, candidates):
-    return State(
-        field=s.field,
-        is_relation=s.is_relation,
-        candidates=candidates,
-        fk_name=s.fk_name
-    )
-
-
-if django.VERSION >= (1, 8):
-    def get_all_fields(m):
-        return m._meta.get_fields()
-else:
-    # planning to drop 1.7
-    from django.db.models.fields.related import RelatedField
-
-    class FieldAdapter(object):
-        def __init__(self, f):
-            self.f = f
-            self.is_relation = isinstance(f, RelatedField)
-
-        def __getattr__(self, k):
-            return getattr(self.f, k)
-
-    def get_all_fields(m):
-        xs = [m._meta._name_map.get(name, None)[0] for name in m._meta.get_all_field_names()]
-        return [FieldAdapter(x) for x in xs if x]
-
-
-def extract_candidates(model):
-    d = tree()
-    for f in get_all_fields(model):
-        # if not hasattr(f, "attname"):
-        #     # print("model: {}.{} does not have attname".format(model, f))
-        #     continue
-        s = State(
-            field=f,
-            is_relation=f.is_relation,
-            candidates=None,
-            fk_name=getattr(f, "attname", None)
-        )
-        if not s.fk_name:
-            print(model, s.field.name)
-        d[f.name] = s
-    return d
 
 
 default_hint_extractor = HintExtractor()

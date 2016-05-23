@@ -3,10 +3,22 @@ from django.test import TestCase
 from . import models as m
 
 
-class ExtractCandidatesTests(TestCase):
+class ResultReprTests(TestCase):
+    def _makeOne(self, fields, one_to_onerel=[], onerel_to_one=[], one_to_many=[], many_to_one=[], many_to_manyrel=[], manyrel_to_many=[]):
+        from django_returnfields.aggressive import Result
+        return Result(fields, one_to_onerel, onerel_to_one, one_to_many, many_to_one, many_to_manyrel, manyrel_to_many)
+
+    def test_it(self):
+        result = self._makeOne(["name"], one_to_onerel=["info"])
+        actual = repr(result)
+        expected = "Result(fields=['name'], one_to_onerel=['info'])"
+        self.assertEqual(actual, expected)
+
+
+class ExtractHintDictTests(TestCase):
     def _callFUT(self, model):
-        from django_returnfields.aggressive import extract_candidates
-        return extract_candidates(model)
+        from django_returnfields.aggressive import HintMap
+        return HintMap().extract(model)
 
     def test_for_prepare__load_candidates(self):
         candidates = self._callFUT(m.Customer)
@@ -60,6 +72,22 @@ class ExtractCandidatesTests(TestCase):
             'order',
         ]
         self.assertEqual(tuple(sorted(candidates.keys())), tuple(sorted(expected)))
+
+
+class ExtractorClassifyTests(TestCase):
+    def _makeOne(self):
+        from django_returnfields.aggressive import HintExtractor
+        return HintExtractor()
+
+    def test_it(self):
+        s = {}
+        for model in [m.Order, m.Item, m.CustomerKarma, m.Customer]:
+            for f in model._meta.get_fields():
+                s[type(f)] = f
+
+        for t, f in s.items():
+            print(f.name, t, f.is_relation)
+        print(len(s))
 
 
 class ExtractorTests(TestCase):
