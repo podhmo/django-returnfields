@@ -3,18 +3,6 @@ from django.test import TestCase
 from . import models as m
 
 
-class ResultReprTests(TestCase):
-    def _makeOne(self, fields, one_to_onerel=[], onerel_to_one=[], one_to_many=[], many_to_one=[], many_to_manyrel=[], manyrel_to_many=[]):
-        from django_returnfields.aggressive import Result
-        return Result(fields, one_to_onerel, onerel_to_one, one_to_many, many_to_one, many_to_manyrel, manyrel_to_many)
-
-    def test_it(self):
-        result = self._makeOne(["name"], one_to_onerel=["info"])
-        actual = repr(result)
-        expected = "Result(fields=['name'], one_to_onerel=['info'])"
-        self.assertEqual(actual, expected)
-
-
 class ExtractHintDictTests(TestCase):
     def _callFUT(self, model):
         from django_returnfields.aggressive import HintMap
@@ -79,15 +67,55 @@ class ExtractorClassifyTests(TestCase):
         from django_returnfields.aggressive import HintExtractor
         return HintExtractor()
 
-    def test_it(self):
-        s = {}
-        for model in [m.Order, m.Item, m.CustomerKarma, m.Customer]:
-            for f in model._meta.get_fields():
-                s[type(f)] = f
+    # relation: CustomerKarma - Customer *-* Order -* Item, Customer -* CustomerPosition
+    def test_it_nest1__star(self):
+        model = m.CustomerKarma
+        query = ["*"]
+        actual = self._makeOne().extract(model, query)
+        expected = "Result(fields=[Hint(name='id'), Hint(name='memo1'), Hint(name='memo2'), Hint(name='memo3'), Hint(name='point')])"
+        self.assertEqual(str(actual), expected)
 
-        for t, f in s.items():
-            print(f.name, t, f.is_relation)
-        print(len(s))
+    def test_it_nest2__star_id__karma(self):
+        model = m.CustomerKarma
+        query = ["*__id"]
+        actual = self._makeOne().extract(model, query)
+        expected = "Result(reverse_related=[Hint(name='customer')], foreign_keys=['customer_id'], subresults=[Result(name='customer', fields=[Hint(name='id')])])"
+        self.assertEqual(str(actual), expected)
+
+    def test_it_nest2__star_id__customer(self):
+        model = m.Customer
+        query = ["*__id"]
+        actual = self._makeOne().extract(model, query)
+        expected = "Result(related=[Hint(name='customerposition'), Hint(name='karma'), Hint(name='orders')], subresults=[Result(name='customerposition', fields=[Hint(name='id')]), Result(name='karma', fields=[Hint(name='id')]), Result(name='orders', fields=[Hint(name='id')])])"
+        self.assertEqual(str(actual), expected)
+
+    def test_it_nest2__star_id__order(self):
+        model = m.Order
+        query = ["*__id"]
+        actual = self._makeOne().extract(model, query)
+        expected = "Result(related=[Hint(name='items')], reverse_related=[Hint(name='customers')], subresults=[Result(name='customers', fields=[Hint(name='id')]), Result(name='items', fields=[Hint(name='id')])])"
+        self.assertEqual(str(actual), expected)
+
+    def test_it_nest2__star_id__item(self):
+        model = m.Item
+        query = ["*__id"]
+        actual = self._makeOne().extract(model, query)
+        expected = "Result(reverse_related=[Hint(name='order')], foreign_keys=['order_id'], subresults=[Result(name='order', fields=[Hint(name='id')])])"
+        self.assertEqual(str(actual), expected)
+
+    def test_it_nest2__star_id__customerposition(self):
+        model = m.CustomerPosition
+        query = ["*__id"]
+        actual = self._makeOne().extract(model, query)
+        expected = "Result(reverse_related=[Hint(name='customer')], foreign_keys=['customer_id'], subresults=[Result(name='customer', fields=[Hint(name='id')])])"
+        self.assertEqual(str(actual), expected)
+
+    def test_it_nest__each_field__customer(self):
+        model = m.Customer
+        query = ["karma__memo1", "orders__memo2", "customerposition__memo3"]
+        actual = self._makeOne().extract(model, query)
+        expected = "Result(related=[Hint(name='customerposition'), Hint(name='karma'), Hint(name='orders')], subresults=[Result(name='customerposition', fields=[Hint(name='memo3')]), Result(name='karma', fields=[Hint(name='memo1')]), Result(name='orders', fields=[Hint(name='memo2')])])"
+        self.assertEqual(str(actual), expected)
 
 
 class ExtractorTests(TestCase):

@@ -34,6 +34,14 @@ class CustomerKarma(models.Model):
     memo3 = models.CharField(max_length=255, default="", null=False)  # for test
 
 
+class CustomerPosition(models.Model):
+    customer = models.ForeignKey(Customer)
+    name = models.CharField(max_length=255, default="", null=False)
+    memo1 = models.CharField(max_length=255, default="", null=False)  # for test
+    memo2 = models.CharField(max_length=255, default="", null=False)  # for test
+    memo3 = models.CharField(max_length=255, default="", null=False)  # for test
+
+
 class Order(models.Model):
     customers = models.ManyToManyField(Customer, related_name="orders")
     name = models.CharField(max_length=255, default="", null=False)

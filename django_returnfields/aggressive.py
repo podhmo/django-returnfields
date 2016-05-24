@@ -1,37 +1,13 @@
 # -*- coding:utf-8 -*-
-from collections import defaultdict, namedtuple
+from collections import defaultdict, OrderedDict
 import django
-# todo: fk_name
-Hint = namedtuple(
-    "Hint",
-    "name, is_relation, fk_name, field"
-)
-TmpResult = namedtuple(
-    "TmpResult",
-    "name, current, children"
-)
 
+from .structures import Hint, TmpResult, Result
 
-def tree():
-    return defaultdict(tree)
 
 NOREL = ":norel:"
 REL = ":rel:"
 ALL = ":all:"
-
-Result = namedtuple(
-    "Result",
-    "fields, one_to_onerel, onerel_to_one, one_to_many, many_to_one, many_to_manyrel, manyrel_to_many"
-)
-
-
-def repr_result(self):
-    values = []
-    for k, v in self._asdict().items():
-        if v:
-            values.append("{}={!r}".format(k, v))
-    return "{}({})".format(self.__class__.__name__, ", ".join(values))
-Result.__repr__ = repr_result
 
 
 class HintIterator(object):
@@ -43,6 +19,10 @@ class HintIterator(object):
         if t == ALL:
             for s in self.d.values():
                 yield s
+        elif t == REL:
+            for s in self.d.values():
+                if s.is_relation:
+                    yield s
         elif t == NOREL:
             for s in self.d.values():
                 if not s.is_relation:
@@ -68,22 +48,33 @@ class HintMap(object):
     iterator_cls = HintIterator
 
     def __init__(self):
-        # model -> tree
-        self.cache = {}
+        self.cache = {}  # Dict[model, Hint]
 
     def extract(self, model):
-        d = tree()
+        d = OrderedDict()
         for f in get_all_fields(model):
-            # if not hasattr(f, "attname"):
-            #     # print("model: {}.{} does not have attname".format(model, f))
-            #     continue
-            s = Hint(
-                name=f.name,
-                is_relation=f.is_relation,
-                fk_name=getattr(f, "attname", None),
-                field=f,
-            )
-            d[f.name] = s
+            name, is_relation, defer_name = f.name, f.is_relation, getattr(f, "attname", None)
+            rel_name = None
+            is_reverse_related = False
+            rel_model = None
+            if is_relation:
+                if hasattr(f, "rel_class"):
+                    is_reverse_related = True
+                    rel_name = f.rel.get_accessor_name()
+                    rel_model = f.rel.model
+                else:
+                    rel_name = f.field.name
+                    rel_model = f.field.model
+            d[f.name] = Hint(name=name,
+                             is_relation=is_relation,
+                             is_reverse_related=is_reverse_related,
+                             rel_name=rel_name,
+                             rel_model=rel_model,
+                             defer_name=defer_name,
+                             field=f)
+            # hmm. supporting accessor_name? (e.g. `customerposition_set`)
+            if hasattr(f, "get_accessor_name"):
+                d[f.get_accessor_name()] = d[f.name]
         return d
 
     def load(self, model):
@@ -99,50 +90,73 @@ class HintMap(object):
 class HintExtractor(object):
     ALL = "*"
 
-    def __init__(self):
+    def __init__(self, sorted=True):
+        # TODO
+        self.sorted = sorted
+        self.bidirectional = False
         self.hintmap = HintMap()
 
-    def extract(self, model, name_list, with_relation=False):
-        return self.drilldown(model, name_list, with_relation=with_relation)
+    def extract(self, model, name_list):
+        tmp_result = self.drilldown(model, name_list, backref="")
+        return self.classify(tmp_result)
 
-    def classify(self, hint):
-        print(dir(hint.field))
+    def seq(self, seq, key):
+        return sorted(seq, key=key) if self.sorted else seq
 
-    def drilldown(self, model, name_list, with_relation, parent_name=""):
+    def classify(self, tmp_result):
+        result = Result(name=tmp_result.name,
+                        fields=[],
+                        related=[],
+                        reverse_related=[],
+                        foreign_keys=[],
+                        subresults=[])
+        for h in self.seq(tmp_result.hints, key=lambda h: h.name):
+            if not h.is_relation:
+                result.fields.append(h)
+                continue
+
+            if h.defer_name is not None and not h.field.many_to_many:
+                result.foreign_keys.append(h.defer_name)
+            if h.is_reverse_related:
+                result.reverse_related.append(h)
+            else:
+                result.related.append(h)
+        for sr in self.seq(tmp_result.subresults, key=lambda r: r.name):
+            result.subresults.append(self.classify(sr))
+        return result
+
+    def drilldown(self, model, name_list, backref, parent_name=""):
         hints = []
         names = []
         rels = defaultdict(list)
-        for name in names:
-            if self.ALL == name:
+        for name in name_list:
+            if name == self.ALL:
                 names.append(NOREL)
             elif "__" not in name:
                 names.append(name)
             else:
                 prefix, sub_name = name.split("__", 1)
-                if self.ALL == prefix:
-                    names.append(REL)
                 rels[prefix].append(sub_name)
 
-        existing_rels = []
         iterator = self.hintmap.iterator(model, names)
         for hint in iterator:
             hints.append(hint)
-            if hint.is_relation:
-                existing_rels.append(hint)
 
-        children = []
-        for hint in existing_rels:
-            children.append(self.drilldown(hint.field.model, rels[hint.name], with_relation, parent_name=hint.name))
-        return TmpResult(name=parent_name, current=hints, children=children)
-
-
-def new_hint(s, hint):
-    return Hint(
-        field=s.field,
-        is_relation=s.is_relation,
-        hint=hint,
-        fk_name=s.fk_name
-    )
+        subresults = []
+        for prefix, sub_name_list in rels.items():
+            if prefix == self.ALL:
+                prefix = REL
+            for hint in iterator.clone([prefix]):
+                if hint.name == backref:
+                    print("skip {}".format(backref))
+                hints.append(hint)
+                subresults.append(
+                    self.drilldown(
+                        hint.rel_model, sub_name_list,
+                        backref=hint.rel_name, parent_name=hint.name
+                    )
+                )
+        return TmpResult(name=parent_name, hints=hints, subresults=subresults)
 
 
 if django.VERSION >= (1, 8):
@@ -174,7 +188,7 @@ class Inspector(object):
                 names.append(hint.name)
                 r.append("__".join(names[1:]))
                 names.pop()
-            for subresult in result.children:
+            for subresult in result.subresults:
                 names.append(subresult.name)
                 rec(subresult, names)
                 names.pop()
@@ -189,14 +203,14 @@ class Inspector(object):
                 names.append(hint.name)
                 r.append("__".join(names[1:]))
                 names.pop()
-            for subresult in result.children:
+            for subresult in result.subresults:
                 names.append(subresult.name)
                 rec(subresult, names)
                 names.pop()
         rec(result, [result.name])
         return r
 
-    def collect_without_fk_name_fields(self, model):
+    def collect_without_defer_name_fields(self, model):
         return [f for f in get_all_fields(model) if not getattr(f, "attname", None)]
 
 
