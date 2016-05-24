@@ -1,9 +1,12 @@
 # -*- coding:utf-8 -*-
+import logging
 from collections import defaultdict, OrderedDict
 import django
 
 from .structures import Hint, TmpResult, Result
 
+
+logger = logging.getLogger(__name__)
 
 NOREL = ":norel:"
 REL = ":rel:"
@@ -11,37 +14,37 @@ ALL = ":all:"
 
 
 class HintIterator(object):
-    def __init__(self, d, tokens):
+    def __init__(self, d, tokens, history=None):
         self.d = d
         self.tokens = tokens
+        self.history = history or set()
 
     def parse_token(self, t):
         if t == ALL:
             for s in self.d.values():
-                yield s
+                yield s, False
         elif t == REL:
             for s in self.d.values():
                 if s.is_relation:
-                    yield s
+                    yield s, False
         elif t == NOREL:
             for s in self.d.values():
                 if not s.is_relation:
-                    yield s
+                    yield s, False
         else:
             s = self.d.get(t)
             if s is not None:
-                yield s
+                yield s, True
 
     def clone(self, tokens):
         return self.__class__(self.d, tokens)
 
     def __iter__(self):
-        hist = set()
         for t in self.tokens:
-            for s in self.parse_token(t):
-                if s not in hist:
-                    hist.add(s)
-                    yield s
+            for s, selected in self.parse_token(t):
+                if s not in self.history:
+                    self.history.add(s)
+                    yield s, selected
 
 
 class HintMap(object):
@@ -139,24 +142,34 @@ class HintExtractor(object):
                 rels[prefix].append(sub_name)
 
         iterator = self.hintmap.iterator(model, names)
-        for hint in iterator:
+        for hint, _ in iterator:
             hints.append(hint)
 
-        subresults = []
+        subresults_dict = OrderedDict()
         for prefix, sub_name_list in rels.items():
             if prefix == self.ALL:
                 prefix = REL
-            for hint in iterator.clone([prefix]):
-                if hint.name == backref:
-                    print("skip {}".format(backref))
+            for hint, selected in iterator.clone([prefix]):
+                if not selected and hint.name == backref:
+                    logger.info("skip %s".format(backref))
+                    continue
                 hints.append(hint)
-                subresults.append(
+                self._merge(
+                    subresults_dict,
                     self.drilldown(
                         hint.rel_model, sub_name_list,
                         backref=hint.rel_name, parent_name=hint.name
                     )
                 )
-        return TmpResult(name=parent_name, hints=hints, subresults=subresults)
+        return TmpResult(name=parent_name, hints=hints, subresults=list(subresults_dict.values()))
+
+    def _merge(self, d, r):
+        if r.name not in d:
+            d[r.name] = r
+        else:
+            cr = d[r.name]
+            cr.hints.extend(r.hints)
+            cr.subresults.extend(r.subresults)
 
 
 if django.VERSION >= (1, 8):
@@ -180,38 +193,11 @@ else:
 
 
 class Inspector(object):
-    def collect_for_select_names(self, result):
-        r = []
-
-        def rec(result, names):
-            for hint in result.for_select:
-                names.append(hint.name)
-                r.append("__".join(names[1:]))
-                names.pop()
-            for subresult in result.subresults:
-                names.append(subresult.name)
-                rec(subresult, names)
-                names.pop()
-        rec(result, [result.name])
-        return r
-
-    def collect_for_join_names(self, result):
-        r = []
-
-        def rec(result, names):
-            for hint in result.for_join:
-                names.append(hint.name)
-                r.append("__".join(names[1:]))
-                names.pop()
-            for subresult in result.subresults:
-                names.append(subresult.name)
-                rec(subresult, names)
-                names.pop()
-        rec(result, [result.name])
-        return r
-
-    def collect_without_defer_name_fields(self, model):
-        return [f for f in get_all_fields(model) if not getattr(f, "attname", None)]
+    def depth(self, result, i=1):
+        if not result.subresults:
+            return i
+        else:
+            return max(self.depth(r, i + 1)for r in result.subresults)
 
 
 default_hint_extractor = HintExtractor()

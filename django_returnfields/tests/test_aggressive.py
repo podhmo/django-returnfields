@@ -67,6 +67,10 @@ class ExtractorClassifyTests(TestCase):
         from django_returnfields.aggressive import HintExtractor
         return HintExtractor()
 
+    def _makeInspector(self):
+        from django_returnfields.aggressive import Inspector
+        return Inspector()
+
     # relation: CustomerKarma - Customer *-* Order -* Item, Customer -* CustomerPosition
     def test_it_nest1__star(self):
         model = m.CustomerKarma
@@ -115,6 +119,31 @@ class ExtractorClassifyTests(TestCase):
         query = ["karma__memo1", "orders__memo2", "customerposition__memo3"]
         actual = self._makeOne().extract(model, query)
         expected = "Result(related=[Hint(name='customerposition'), Hint(name='karma'), Hint(name='orders')], subresults=[Result(name='customerposition', fields=[Hint(name='memo3')]), Result(name='karma', fields=[Hint(name='memo1')]), Result(name='orders', fields=[Hint(name='memo2')])])"
+        self.assertEqual(str(actual), expected)
+
+    def test_it_nest3__star_id__item(self):
+        model = m.Item
+        query = ["*__*__id"]
+        actual = self._makeOne().extract(model, query)
+        expected = "Result(reverse_related=[Hint(name='order')], foreign_keys=['order_id'], subresults=[Result(name='order', reverse_related=[Hint(name='customers')], subresults=[Result(name='customers', fields=[Hint(name='id')])])])"
+        self.assertEqual(str(actual), expected)
+
+    def test_it_nest3__star_id__item__select__skiped_attributes__directly(self):
+        model = m.Item
+        query = ["*__*__id", "order__items"]
+        actual = self._makeOne().extract(model, query)
+        expected = "Result(reverse_related=[Hint(name='order'), Hint(name='order')], foreign_keys=['order_id', 'order_id'], subresults=[Result(name='order', related=[Hint(name='items')], reverse_related=[Hint(name='customers')], subresults=[Result(name='customers', fields=[Hint(name='id')])])])"
+        self.assertEqual(str(actual), expected)
+
+    def test_it_nest6__id__item(self):
+        model = m.Item
+        query = ["id", "*__id", "*__*__id", "*__*__*__id", "*__*__*__*__id", "*__*__*__*__*__id"]
+        actual = self._makeOne().extract(model, query)
+
+        inspector = self._makeInspector()
+        self.assertEqual(inspector.depth(actual), 4)
+        # Item -> {order: {customers: {customerposition: {}, karma: {}}}}
+        expected = "Result(fields=[Hint(name='id')], reverse_related=[Hint(name='order')], foreign_keys=['order_id'], subresults=[Result(name='order', fields=[Hint(name='id')], reverse_related=[Hint(name='customers')], subresults=[Result(name='customers', fields=[Hint(name='id')], related=[Hint(name='customerposition'), Hint(name='karma')], subresults=[Result(name='customerposition', fields=[Hint(name='id')]), Result(name='karma', fields=[Hint(name='id')])])])])"
         self.assertEqual(str(actual), expected)
 
 
