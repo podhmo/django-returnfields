@@ -218,13 +218,20 @@ class OnlyQueryTests(TestCase):
         qs = m.Customer.objects.select_related("karma")
         self.assertIn("JOIN", str(qs.query))
         optimized = self._callFUT(qs, fields)
-        optimized.pp()
-        print(optimized.query)
         self.assertIn("JOIN", str(optimized.query))
         self.assertLess(len(str(optimized.query)), len(str(qs.query)))
 
         # django's limitation
         # self.assertNotIn("memo3", str(optimized.query))
+
+    def test_it(self):
+        fields = ["xxxx", "name", "memo1", "customer__name", "substitute__name"]
+        qs = m.CustomerPosition.objects.all()
+        self.assertNotIn("JOIN", str(qs.query))
+        optimized = self._callFUT(qs, fields)
+        self.assertIn("JOIN", str(optimized.query))
+        # self.assertLess(len(str(optimized.query)), len(str(qs.query)))
+        self.assertNotIn("memo3", str(optimized.query))
 
     # def test_safe_only__one_to_many(self):
     #     fields = ["xxxx", "name", "memo1", "items__name", "items__memo2", "items__yyyy"]

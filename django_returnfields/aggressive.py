@@ -218,7 +218,7 @@ one_to_many items <class 'django.db.models.fields.reverse_related.ManyToOneRel'>
     def collect_joins(self, result):
         # can join: one to one*, one* to one, many to one
         xs = [h.name for h in result.related if isinstance(h.field.field, (related.OneToOneField, related.ForeignKey))]
-        ys = [h.name for h in result.reverse_related if isinstance(h.field.rel, (reverse_related.OneToOneRel))]
+        ys = [h.name for h in result.reverse_related if isinstance(h.field.rel, (reverse_related.OneToOneRel, reverse_related.ManyToOneRel))]
         return itertools.chain(xs, ys)
 
     def collect_selections(self, result):
@@ -263,8 +263,6 @@ class AggressiveQuery(object):
         return qs.only(*fields)
 
     def _optimize_join(self, qs):
-        if not (qs.query.select_related and hasattr(qs.query.select_related, "items")):
-            return qs
         join_targets = self.inspector.collect_joins(self.result)
         print(join_targets, "@join")
         qs.query.select_related = {k: {} for k in join_targets}  # hmm.

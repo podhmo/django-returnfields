@@ -42,6 +42,7 @@ class CustomerKarma(models.Model):
 
 class CustomerPosition(models.Model):
     customer = models.ForeignKey(Customer)
+    substitute = models.ForeignKey(Customer)
     name = models.CharField(max_length=255, default="", null=False)
     memo1 = models.CharField(max_length=255, default="", null=False)  # for test
     memo2 = models.CharField(max_length=255, default="", null=False)  # for test
