@@ -25,6 +25,9 @@ class Customer(models.Model):
     memo2 = models.CharField(max_length=255, default="", null=False)  # for test
     memo3 = models.CharField(max_length=255, default="", null=False)  # for test
 
+    class Meta:
+        db_table = "customer"
+
 
 class CustomerKarma(models.Model):
     point = models.IntegerField(null=False, default=0)
@@ -33,6 +36,9 @@ class CustomerKarma(models.Model):
     memo2 = models.CharField(max_length=255, default="", null=False)  # for test
     memo3 = models.CharField(max_length=255, default="", null=False)  # for test
 
+    class Meta:
+        db_table = "customerkarma"
+
 
 class CustomerPosition(models.Model):
     customer = models.ForeignKey(Customer)
@@ -40,6 +46,9 @@ class CustomerPosition(models.Model):
     memo1 = models.CharField(max_length=255, default="", null=False)  # for test
     memo2 = models.CharField(max_length=255, default="", null=False)  # for test
     memo3 = models.CharField(max_length=255, default="", null=False)  # for test
+
+    class Meta:
+        db_table = "customerposition"
 
 
 class Order(models.Model):
@@ -50,6 +59,9 @@ class Order(models.Model):
     memo2 = models.CharField(max_length=255, default="", null=False)  # for test
     memo3 = models.CharField(max_length=255, default="", null=False)  # for test
 
+    class Meta:
+        db_table = "order"
+
 
 class Item(models.Model):
     order = models.ForeignKey(Order, related_name="items")
@@ -58,3 +70,6 @@ class Item(models.Model):
     memo1 = models.CharField(max_length=255, default="", null=False)  # for test
     memo2 = models.CharField(max_length=255, default="", null=False)  # for test
     memo3 = models.CharField(max_length=255, default="", null=False)  # for test
+
+    class Meta:
+        db_table = "item"

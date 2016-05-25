@@ -1,8 +1,13 @@
 # -*- coding:utf-8 -*-
+import itertools
+import sys
+import json
 import logging
 from collections import defaultdict, OrderedDict
 import django
-
+from django.db.models.fields import related
+from django.db.models.fields import reverse_related
+from django.utils.functional import cached_property
 from .structures import Hint, TmpResult, Result
 
 
@@ -193,42 +198,97 @@ else:
 
 
 class Inspector(object):
+    def __init__(self, hintmap=None):
+        self.hintmap = hintmap
+
     def depth(self, result, i=1):
         if not result.subresults:
             return i
         else:
-            return max(self.depth(r, i + 1)for r in result.subresults)
+            return max(self.depth(r, i + 1) for r in result.subresults)
+    """\
+one_to_onerel customer <class 'django.db.models.fields.related.OneToOneField'>
+many_to_one order <class 'django.db.models.fields.related.ForeignKey'>
+onerel_to_one karma <class 'django.db.models.fields.reverse_related.OneToOneRel'>
+manyrel_to_many orders <class 'django.db.models.fields.reverse_related.ManyToManyRel'>
+many_to_manyrel customers <class 'django.db.models.fields.related.ManyToManyField'>
+one_to_many items <class 'django.db.models.fields.reverse_related.ManyToOneRel'>
+"""
+    # todo: performance
+    def collect_joins(self, result):
+        # can join: one to one*, one* to one, many to one
+        xs = [h.name for h in result.related if isinstance(h.field.field, (related.OneToOneField, related.ForeignKey))]
+        ys = [h.name for h in result.reverse_related if isinstance(h.field.rel, (reverse_related.OneToOneRel))]
+        return itertools.chain(xs, ys)
+
+    def collect_selections(self, result):
+        xs = [f.name for f in result.fields]
+        ys = []
+        related_mapping = {h.name: h.rel_model for h in result.related}
+        for sr in result.subresults:
+            if sr.name in related_mapping:
+                # this is limitation. for django's compiler.
+                sub_fields = (h.name for h in self.hintmap.iterator(related_mapping[sr.name], NOREL))
+            else:
+                sub_fields = self.collect_selections(sr)
+            ys.append(["{}__{}".format(sr.name, name) for name in sub_fields])
+        return itertools.chain(xs, *ys)
 
 
 default_hint_extractor = HintExtractor()
 
 
+class AggressiveQuery(object):
+    def __init__(self, queryset, result, hintmap):
+        self.queryset = queryset
+        self.result = result
+        self.inspector = Inspector(hintmap)
+
+    @property
+    def query(self):
+        return self.aggressive_queryset.query
+
+    @cached_property
+    def aggressive_queryset(self):
+        return self.optimize(self.queryset)
+
+    def optimize(self, qs):
+        return self._optimize_join(
+            self._optimize_selections(qs.all())
+        )
+
+    def _optimize_selections(self, qs):
+        fields = list(self.inspector.collect_selections(self.result))
+        print(fields, "@fields")
+        return qs.only(*fields)
+
+    def _optimize_join(self, qs):
+        if not (qs.query.select_related and hasattr(qs.query.select_related, "items")):
+            return qs
+        join_targets = self.inspector.collect_joins(self.result)
+        print(join_targets, "@join")
+        qs.query.select_related = {k: {} for k in join_targets}  # hmm.
+        print(qs.query.select_related, "@@join")
+        return qs
+
+    def pp(self, out=sys.stdout):
+        d = self.result.asdict()
+        return out.write(json.dumps(d, indent=2))
+
+
 def safe_only(qs, name_list, extractor=default_hint_extractor):
-    pair = extractor.extract(qs.model, name_list, with_relation=True)
-    if qs.query.select_related or qs._prefetch_related_lookups:
-        qs = qs._clone()
-        s = set(pair.for_join)
-        s.update(pair.for_select)
-        if qs.query.select_related and hasattr(qs.query.select_related, "items"):
-            qs.query.select_related = {k: v for k, v in qs.query.select_related.items() if k in s}
-            s.update(qs.query.select_related.keys())
-        if qs._prefetch_related_lookups:
-            qs._prefetch_related_lookups = [k for k in qs._prefetch_related_lookups if k in s]
-    return qs.only(*pair.for_select)
-
-
-def safe_defer(qs, name_list, extractor=default_hint_extractor):
-    pair = extractor.extract(qs.model, name_list, with_relation=False)
-    if qs.query.select_related or qs._prefetch_related_lookups:
-        qs = qs._clone()
-        s = set(pair.for_join)
-        s.update(pair.for_select)
-        if qs.query.select_related and hasattr(qs.query.select_related, "items"):
-            qs.query.select_related = {k: v for k, v in qs.query.select_related.items() if k not in s}
-            s.update(qs.query.select_related.keys())
-        if qs._prefetch_related_lookups:
-            qs._prefetch_related_lookups = [k for k in qs._prefetch_related_lookups if k not in s]
-    return qs.defer(*pair.for_select)
+    result = extractor.extract(qs.model, name_list)
+    return AggressiveQuery(qs, result, extractor.hintmap)
+    # if qs.query.select_related or qs._prefetch_related_lookups:
+    #     qs = qs._clone()
+    #     s = set(pair.for_join)
+    #     s.update(pair.for_select)
+    #     if qs.query.select_related and hasattr(qs.query.select_related, "items"):
+    #         qs.query.select_related = {k: v for k, v in qs.query.select_related.items() if k in s}
+    #         s.update(qs.query.select_related.keys())
+    #     if qs._prefetch_related_lookups:
+    #         qs._prefetch_related_lookups = [k for k in qs._prefetch_related_lookups if k in s]
+    # return qs.only(*pair.for_select)
 
 
 def revive_query(query_or_extraction):

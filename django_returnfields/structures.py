@@ -44,6 +44,11 @@ def asdict_hint(self):
     model = d.pop("rel_model", None)
     if model:
         d["_classname"] = model.__name__
+    if d["is_relation"]:
+        if d["is_reverse_related"]:
+            d["_relclassname"] = self.field.rel.__class__.__name__
+        else:
+            d["_relclassname"] = self.field.field.__class__.__name__
     return d
 
 
