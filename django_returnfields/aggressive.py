@@ -105,7 +105,9 @@ class HintExtractor(object):
         self.hintmap = HintMap()
 
     def extract(self, model, name_list):
-        tmp_result = self.drilldown(model, name_list, backref="")
+        backref = set()
+        backref.add((model, ""))
+        tmp_result = self.drilldown(model, name_list, backref=backref, parent_name="")
         return self.classify(tmp_result)
 
     def seq(self, seq, key):
@@ -133,7 +135,8 @@ class HintExtractor(object):
             result.subresults.append(self.classify(sr))
         return result
 
-    def drilldown(self, model, name_list, backref, parent_name=""):
+    def drilldown(self, model, name_list, backref, parent_name, indent=0):
+        logger.info("%s %s %s %s %s", " " * (indent + indent), parent_name, model.__name__, name_list)
         hints = []
         names = []
         rels = defaultdict(list)
@@ -155,15 +158,21 @@ class HintExtractor(object):
             if prefix == self.ALL:
                 prefix = REL
             for hint, selected in iterator.clone([prefix]):
-                if not selected and hint.name == backref:
-                    logger.info("skip %s".format(backref))
-                    continue
+                # print((model, hint.name), "@", backref)
+                if not selected:
+                    if indent == 1 and (hint.rel_model, "") in backref:
+                        logger.info("skip %s %s %s", model, hint.name, hint.rel_model)
+                        continue
+                    if (hint.rel_model, hint.rel_name) in backref:
+                        logger.info("\t\t\tskip %s %s %s", model.__name__, hint.name, hint.rel_model.__name__)
+                        continue
+                backref.add((model, hint.name))  # need pop
                 hints.append(hint)
                 self._merge(
                     subresults_dict,
                     self.drilldown(
                         hint.rel_model, sub_name_list,
-                        backref=hint.rel_name, parent_name=hint.name
+                        backref=backref, parent_name=hint.name, indent=indent + 1
                     )
                 )
         return TmpResult(name=parent_name, hints=hints, subresults=list(subresults_dict.values()))

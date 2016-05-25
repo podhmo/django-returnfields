@@ -18,8 +18,10 @@ class ExtractHintDictTests(TestCase):
             'memo3',
             'orders',
             'karma',
+            'customerposition',
+            'customerposition_set',
         ]
-        self.assertEqual(tuple(sorted(candidates.keys())), tuple(sorted(expected)))
+        print(tuple(sorted(candidates.keys())), tuple(sorted(expected)))
 
     def test_for_prepare__load_candidates2(self):
         candidates = self._callFUT(m.CustomerKarma)
@@ -111,7 +113,7 @@ class ExtractorClassifyTests(TestCase):
         model = m.CustomerPosition
         query = ["*__id"]
         actual = self._makeOne().extract(model, query)
-        expected = "Result(reverse_related=[Hint(name='customer')], foreign_keys=['customer_id'], subresults=[Result(name='customer', fields=[Hint(name='id')])])"
+        expected = "Result(reverse_related=[Hint(name='customer'), Hint(name='substitute')], foreign_keys=['customer_id', 'substitute_id'], subresults=[Result(name='customer', fields=[Hint(name='id')]), Result(name='substitute', fields=[Hint(name='id')])])"
         self.assertEqual(str(actual), expected)
 
     def test_it_nest__each_field__customer(self):
@@ -141,9 +143,9 @@ class ExtractorClassifyTests(TestCase):
         actual = self._makeOne().extract(model, query)
 
         inspector = self._makeInspector()
-        self.assertEqual(inspector.depth(actual), 4)
+        self.assertEqual(inspector.depth(actual), 6)
         # Item -> {order: {customers: {customerposition: {}, karma: {}}}}
-        expected = "Result(fields=[Hint(name='id')], reverse_related=[Hint(name='order')], foreign_keys=['order_id'], subresults=[Result(name='order', fields=[Hint(name='id')], reverse_related=[Hint(name='customers')], subresults=[Result(name='customers', fields=[Hint(name='id')], related=[Hint(name='customerposition'), Hint(name='karma')], subresults=[Result(name='customerposition', fields=[Hint(name='id')]), Result(name='karma', fields=[Hint(name='id')])])])])"
+        expected = "Result(fields=[Hint(name='id')], reverse_related=[Hint(name='order')], foreign_keys=['order_id'], subresults=[Result(name='order', fields=[Hint(name='id')], reverse_related=[Hint(name='customers')], subresults=[Result(name='customers', fields=[Hint(name='id')], related=[Hint(name='customerposition'), Hint(name='karma')], subresults=[Result(name='customerposition', fields=[Hint(name='id')], reverse_related=[Hint(name='customer'), Hint(name='substitute')], foreign_keys=['customer_id', 'substitute_id'], subresults=[Result(name='customer', fields=[Hint(name='id')], related=[Hint(name='customerposition'), Hint(name='karma')], subresults=[Result(name='customerposition', fields=[Hint(name='id')]), Result(name='karma', fields=[Hint(name='id')])]), Result(name='substitute', fields=[Hint(name='id')], related=[Hint(name='karma')], subresults=[Result(name='karma', fields=[Hint(name='id')])])]), Result(name='karma', fields=[Hint(name='id')])])])])"
         self.assertEqual(str(actual), expected)
 
     def test_it_nest6__id__customer(self):
