@@ -21,7 +21,7 @@ class ExtractHintDictTests(TestCase):
             'customerposition',
             'customerposition_set',
         ]
-        print(tuple(sorted(candidates.keys())), tuple(sorted(expected)))
+        self.assertEqual(tuple(sorted(candidates.keys())), tuple(sorted(expected)))
 
     def test_for_prepare__load_candidates2(self):
         candidates = self._callFUT(m.CustomerKarma)
@@ -157,6 +157,16 @@ class ExtractorClassifyTests(TestCase):
         self.assertEqual(inspector.depth(actual), 3)
         # Customer -> {customerposition: {}, karma: {}, orders: {items: {}}}
         expected = "Result(fields=[Hint(name='id')], related=[Hint(name='customerposition'), Hint(name='karma'), Hint(name='orders')], subresults=[Result(name='customerposition', fields=[Hint(name='id')]), Result(name='karma', fields=[Hint(name='id')]), Result(name='orders', fields=[Hint(name='id')], related=[Hint(name='items')], subresults=[Result(name='items', fields=[Hint(name='id')])])])"
+        self.assertEqual(str(actual), expected)
+
+    def test_it_usualy_case(self):
+        model = m.CustomerKarma
+        query = ["id", "customer__id", "customer__customerposition__id"]
+        actual = self._makeOne().extract(model, query)
+
+        inspector = self._makeInspector()
+        self.assertEqual(inspector.depth(actual), 3)
+        expected = "Result(fields=[Hint(name='id')], reverse_related=[Hint(name='customer')], foreign_keys=['customer_id'], subresults=[Result(name='customer', fields=[Hint(name='id')], related=[Hint(name='customerposition')], subresults=[Result(name='customerposition', fields=[Hint(name='id')])])])"
         self.assertEqual(str(actual), expected)
 
 
