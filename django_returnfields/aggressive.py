@@ -136,7 +136,7 @@ class HintExtractor(object):
         return result
 
     def drilldown(self, model, name_list, backref, parent_name, indent=0):
-        logger.info("%s %s %s %s %s", " " * (indent + indent), parent_name, model.__name__, name_list)
+        logger.info("%s name=%r model=%r %r", " " * (indent + indent), parent_name, model.__name__, name_list)
         hints = []
         names = []
         rels = defaultdict(list)
@@ -158,15 +158,16 @@ class HintExtractor(object):
             if prefix == self.ALL:
                 prefix = REL
             for hint, selected in iterator.clone([prefix]):
-                # print((model, hint.name), "@", backref)
+                logger.debug("\t\t\tfield %r %r (%r %r)", model.__name__, hint.name, hint.rel_model.__name__, hint.rel_name)
+                k = (model, hint.name)
                 if not selected:
                     if indent == 1 and (hint.rel_model, "") in backref:
-                        logger.info("skip %s %s %s", model, hint.name, hint.rel_model)
+                        logger.info("\t\t\tskip %r %r %r", model.__name__, hint.name, hint.rel_model.__name__)
                         continue
                     if (hint.rel_model, hint.rel_name) in backref:
                         logger.info("\t\t\tskip %s %s %s", model.__name__, hint.name, hint.rel_model.__name__)
                         continue
-                backref.add((model, hint.name))  # need pop
+                backref.add(k)
                 hints.append(hint)
                 self._merge(
                     subresults_dict,
@@ -175,6 +176,8 @@ class HintExtractor(object):
                         backref=backref, parent_name=hint.name, indent=indent + 1
                     )
                 )
+                if k in backref:
+                    backref.remove(k)
         return TmpResult(name=parent_name, hints=hints, subresults=list(subresults_dict.values()))
 
     def _merge(self, d, r):
@@ -226,8 +229,13 @@ one_to_many items <class 'django.db.models.fields.reverse_related.ManyToOneRel'>
     # todo: performance
     def collect_joins(self, result):
         # can join: one to one*, one* to one, many to one
-        xs = [h.name for h in result.related if isinstance(h.field.field, (related.OneToOneField, related.ForeignKey))]
+        xs = [h.name for h in result.related if isinstance(h.field.field, (related.OneToOneField))]
         ys = [h.name for h in result.reverse_related if isinstance(h.field.rel, (reverse_related.OneToOneRel, reverse_related.ManyToOneRel))]
+        return itertools.chain(xs, ys)
+
+    def collect_prefetchs(self, result):
+        xs = [h.name for h in result.related if isinstance(h.field.field, (related.ManyToManyField, related.ForeignKey))]
+        ys = [h.name for h in result.reverse_related if isinstance(h.field.rel, (reverse_related.ManyToOneRel, reverse_related.ManyToManyRel))]
         return itertools.chain(xs, ys)
 
     def collect_selections(self, result):
@@ -262,20 +270,30 @@ class AggressiveQuery(object):
         return self.optimize(self.queryset)
 
     def optimize(self, qs):
-        return self._optimize_join(
-            self._optimize_selections(qs.all())
+        return self._optimize_selections(
+            self._optimize_prefetch(
+                self._optimize_join(qs.all())
+            )
         )
 
     def _optimize_selections(self, qs):
         fields = list(self.inspector.collect_selections(self.result))
-        print(fields, "@fields")
+        logger.debug("@selection, %r", fields)
         return qs.only(*fields)
 
     def _optimize_join(self, qs):
         join_targets = self.inspector.collect_joins(self.result)
-        print(join_targets, "@join")
-        qs.query.select_related = {k: {} for k in join_targets}  # hmm.
-        print(qs.query.select_related, "@@join")
+        select_related = {k: {} for k in join_targets}
+        logger.debug("@join, %r", select_related)
+        qs.query.select_related = select_related  # hmm.
+        return qs
+
+    def _optimize_prefetch(self, qs):
+        prefetch_targets = self.inspector.collect_prefetchs(self.result)
+        prefetch_targets = list(prefetch_targets)
+        logger.debug("@prefetch, %r", prefetch_targets)
+        # qs.query.select_related = {k: {} for k in prefetch_targets}  # hmm.
+        # print(qs.query.select_related, "@@prefetch")
         return qs
 
     def pp(self, out=sys.stdout):

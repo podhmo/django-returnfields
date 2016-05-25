@@ -144,7 +144,6 @@ class ExtractorClassifyTests(TestCase):
 
         inspector = self._makeInspector()
         self.assertEqual(inspector.depth(actual), 6)
-        # Item -> {order: {customers: {customerposition: {}, karma: {}}}}
         expected = "Result(fields=[Hint(name='id')], reverse_related=[Hint(name='order')], foreign_keys=['order_id'], subresults=[Result(name='order', fields=[Hint(name='id')], reverse_related=[Hint(name='customers')], subresults=[Result(name='customers', fields=[Hint(name='id')], related=[Hint(name='customerposition'), Hint(name='karma')], subresults=[Result(name='customerposition', fields=[Hint(name='id')], reverse_related=[Hint(name='customer'), Hint(name='substitute')], foreign_keys=['customer_id', 'substitute_id'], subresults=[Result(name='customer', fields=[Hint(name='id')], related=[Hint(name='customerposition'), Hint(name='karma')], subresults=[Result(name='customerposition', fields=[Hint(name='id')]), Result(name='karma', fields=[Hint(name='id')])]), Result(name='substitute', fields=[Hint(name='id')], related=[Hint(name='karma')], subresults=[Result(name='karma', fields=[Hint(name='id')])])]), Result(name='karma', fields=[Hint(name='id')])])])])"
         self.assertEqual(str(actual), expected)
 
@@ -154,9 +153,8 @@ class ExtractorClassifyTests(TestCase):
         actual = self._makeOne().extract(model, query)
 
         inspector = self._makeInspector()
-        self.assertEqual(inspector.depth(actual), 3)
-        # Customer -> {customerposition: {}, karma: {}, orders: {items: {}}}
-        expected = "Result(fields=[Hint(name='id')], related=[Hint(name='customerposition'), Hint(name='karma'), Hint(name='orders')], subresults=[Result(name='customerposition', fields=[Hint(name='id')]), Result(name='karma', fields=[Hint(name='id')]), Result(name='orders', fields=[Hint(name='id')], related=[Hint(name='items')], subresults=[Result(name='items', fields=[Hint(name='id')])])])"
+        self.assertEqual(inspector.depth(actual), 6)
+        expected = "Result(fields=[Hint(name='id')], related=[Hint(name='customerposition'), Hint(name='karma'), Hint(name='orders')], subresults=[Result(name='customerposition', fields=[Hint(name='id')]), Result(name='karma', fields=[Hint(name='id')]), Result(name='orders', fields=[Hint(name='id')], related=[Hint(name='items')], subresults=[Result(name='items', fields=[Hint(name='id')], reverse_related=[Hint(name='order')], foreign_keys=['order_id'], subresults=[Result(name='order', fields=[Hint(name='id')], reverse_related=[Hint(name='customers')], subresults=[Result(name='customers', fields=[Hint(name='id')], related=[Hint(name='customerposition'), Hint(name='karma')], subresults=[Result(name='customerposition', fields=[Hint(name='id')]), Result(name='karma', fields=[Hint(name='id')])])])])])])"
         self.assertEqual(str(actual), expected)
 
     def test_it_usualy_case(self):
@@ -242,6 +240,7 @@ class OnlyQueryTests(TestCase):
         self.assertNotIn("JOIN", str(qs.query))
         optimized = self._callFUT(qs, fields)
         self.assertIn("JOIN", str(optimized.query))
+        # joined query is more long
         # self.assertLess(len(str(optimized.query)), len(str(qs.query)))
         self.assertNotIn("memo3", str(optimized.query))
 

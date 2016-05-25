@@ -34,6 +34,21 @@ testing_extras = tests_require + [
 class MyTest(TestCommand):
     # if you want to run specific tests only.
     # `python setup.py test -s  django_returnfields.tests.<module>.<class>.<method>`
+
+    user_options = TestCommand.user_options + [
+        ('logging=', 'l', "logging"),
+    ]
+
+    def initialize_options(self):
+        self.logging = None
+        super(MyTest, self).initialize_options()
+
+    def finalize_options(self):
+        super(MyTest, self).finalize_options()
+        if self.logging is not None:
+            import logging
+            logging.basicConfig(level=getattr(logging, self.logging.upper(), 0))
+
     def run_tests(self):
         import os
         if "DJANGO_SETTINGS_MODULE" not in os.environ:
