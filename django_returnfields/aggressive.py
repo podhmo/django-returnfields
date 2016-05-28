@@ -239,9 +239,10 @@ one_to_many items <class 'django.db.models.fields.reverse_related.ManyToOneRel'>
         return itertools.chain(xs, ys)
 
     def collect_selections(self, result):
-        xs = [f.name for f in result.fields]
+        xs = itertools.chain([f.name for f in result.fields], result.foreign_keys)
         ys = []
         related_mapping = {h.name: h.rel_model for h in result.related}
+        print(result, "@@")
         for sr in result.subresults:
             if sr.name in related_mapping:
                 # this is limitation. for django's compiler.
@@ -255,9 +256,24 @@ one_to_many items <class 'django.db.models.fields.reverse_related.ManyToOneRel'>
 default_hint_extractor = HintExtractor()
 
 
+# utilities
+def reset_select_related(qs, join_targets):
+    # remove all and set new settings
+    new_qs = qs.select_related(None).select_related(*join_targets)
+    logger.debug("@select_related, %r", new_qs.query.select_related)
+    return new_qs
+
+
+def reset_prefetch_related(qs, prefetch_targets):
+    # remove all and set new settings
+    new_qs = qs.prefetch_related(None).prefetch_related(*prefetch_targets)
+    logger.debug("@prefetch, %r", new_qs._prefetch_related_lookups)
+    return new_qs
+
+
 class AggressiveQuery(object):
     def __init__(self, queryset, result, hintmap):
-        self.queryset = queryset
+        self.source_queryset = queryset
         self.result = result
         self.inspector = Inspector(hintmap)
 
@@ -265,9 +281,18 @@ class AggressiveQuery(object):
     def query(self):
         return self.aggressive_queryset.query
 
+    def __getattr__(self, k):
+        return getattr(self.aggressive_queryset, k)
+
+    def __iter__(self):
+        return iter(self.aggressive_queryset)
+
+    def __getitem__(self, k):
+        return self.aggressive_queryset[k]
+
     @cached_property
     def aggressive_queryset(self):
-        return self.optimize(self.queryset)
+        return self.optimize(self.source_queryset)
 
     def optimize(self, qs):
         return self._optimize_selections(
@@ -277,24 +302,20 @@ class AggressiveQuery(object):
         )
 
     def _optimize_selections(self, qs):
+        # todo: disable using only
         fields = list(self.inspector.collect_selections(self.result))
         logger.debug("@selection, %r", fields)
         return qs.only(*fields)
 
     def _optimize_join(self, qs):
-        join_targets = self.inspector.collect_joins(self.result)
-        select_related = {k: {} for k in join_targets}
-        logger.debug("@join, %r", select_related)
-        qs.query.select_related = select_related  # hmm.
-        return qs
+        # todo: nested
+        join_targets = list(self.inspector.collect_joins(self.result))
+        return reset_select_related(qs, join_targets)
 
     def _optimize_prefetch(self, qs):
-        prefetch_targets = self.inspector.collect_prefetchs(self.result)
-        prefetch_targets = list(prefetch_targets)
-        logger.debug("@prefetch, %r", prefetch_targets)
-        # qs.query.select_related = {k: {} for k in prefetch_targets}  # hmm.
-        # print(qs.query.select_related, "@@prefetch")
-        return qs
+        # todo: nested, settings filter lazy
+        prefetch_targets = list(self.inspector.collect_prefetchs(self.result))
+        return reset_prefetch_related(qs, prefetch_targets)
 
     def pp(self, out=sys.stdout):
         d = self.result.asdict()
