@@ -16,7 +16,7 @@ PATH_KEY = "_drf__path"  # {name: string, return_fields: string[], skip_fields: 
 INACTIVE_KEY = "_drf__inactive"
 AGGRESSIVE_KEY = "_drf__aggressive"  # boolean
 # xxx
-ALL = ":all:"
+ALL = "*"
 
 
 def truncate_for_child(fields, prefix, field_name):
@@ -69,11 +69,10 @@ class QueryOptimizer(object):
     def __init__(self, restriction):
         self.restriction = restriction
 
-    def optimize_query(self, context, instance):
+    def optimize_query(self, context, instance, serializer_class):
         frame = self.restriction.frame_management.current_frame(context)
-        optimize_type = self.restriction.query_optimizer._detect_optimize_type(frame)
         qs = self._as_query(context, instance)
-        return self._optimize_query(frame, qs, optimize_type)
+        return self._optimize_query(frame, qs, serializer_class)
 
     def _as_query(self, context, data):
         # if paginated view, then data is maybe list type object.
@@ -94,21 +93,35 @@ class QueryOptimizer(object):
                     return qs
         return qs
 
-    def _detect_optimize_type(self, frame):
-        if frame.get(self.restriction.include_key, None) and not frame.get(self.restriction.exclude_key, None):
-            return "include"
-        elif frame.get(self.restriction.exclude_key, None):
-            return "exclude"
-        else:
-            return None
+    def _optimize_query(self, frame, query, serializer_class):
+        if not hasattr(query, "all"):
+            return query
 
-    def _optimize_query(self, frame, query, optimize_type):
-        if hasattr(query, "all"):
-            if optimize_type == 'exclude':
-                return aggressive.safe_defer(query.all(), frame[self.restriction.exclude_key])
-            elif optimize_type == 'include':
-                return aggressive.safe_only(query.all(), frame[self.restriction.include_key])
-        return query
+        skip_list = frame.get(self.restriction.exclude_key, None)
+        name_list = frame.get(self.restriction.include_key, None) or collect_all_name_list(serializer_class)
+        return aggressive.aggressive_query(
+            query.all(),
+            name_list=name_list,
+            skip_list=skip_list
+        )
+
+
+def collect_all_name_list(serializer_class):
+    # cache
+    if hasattr(serializer_class, "_dr_fields"):
+        fields = serializer_class._dr_fields
+    else:
+        fields = serializer_class._dr_fields = serializer_class().get_fields()
+    r = []
+    # todo: supporting SerializerMethodField, ModelField
+    for name, field in fields.items():
+        if hasattr(field, "child"):
+            field = field.child  # ListSerialier -> Serializer
+        if not hasattr(field, "_declared_fields"):
+            r.append(name)
+        else:
+            r.extend("{}__{}".format(name, subname) for subname in collect_all_name_list(field.__class__))
+    return r
 
 
 class FrameManagement(object):
@@ -287,7 +300,7 @@ def list_serializer_factory(serializer_class, restriction=_default_restriction):
                     return serializer_class(instance, **kwargs)
                 restriction.setup(context, many=True)
                 if restriction.can_optimize(context):
-                    instance = restriction.query_optimizer.optimize_query(context, instance)
+                    instance = restriction.query_optimizer.optimize_query(context, instance, cls)
             return super(ReturnFieldsListSerializer, cls).__new__(cls, instance, **kwargs)
 
         # override
