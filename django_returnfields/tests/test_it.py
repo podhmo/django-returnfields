@@ -124,6 +124,7 @@ class AggressiveFeatureTests(APITestCase):
         self.login_user = User.objects.create_superuser('admin', 'myemail@test.com', '')
         group = Group.objects.create(name="magic")
         group.user_set.add(self.login_user)
+        group.user_set.add(User.objects.create_superuser('another', 'myemail2@test.com', ''))
         group.save()
 
     def test_include__aggressive(self):
@@ -135,7 +136,7 @@ class AggressiveFeatureTests(APITestCase):
 
     def test_exclude__aggressive(self):
         path = "/api/users4/?skip_fields=id&aggressive=1"
-        with self.assertNumQueries(3):
+        with self.assertNumQueries(2):
             response = self.client.get(path, format="json")
         self.assertEqual(response.status_code, status.HTTP_200_OK, msg=extract_error_message(response))
         self.assertEqual(set(response.data[0].keys()), {"username", "groups"})

@@ -3,10 +3,11 @@ from django_aggressivequery import from_queryset
 
 def aggressive_query(qs, name_list, skip_list=None):
     assert qs.model
-    aqs = from_queryset(qs, name_list)
+    aqs = from_queryset(qs, name_list, more_specific=True)
     if skip_list:
         aqs = aqs.skip_filter(skip_list)
-    return aqs.to_queryset()
+    qs = aqs.to_queryset()
+    return qs
 
 
 def revive_query(query_or_extraction):

@@ -4,6 +4,7 @@ from collections import OrderedDict
 import warnings
 from rest_framework.serializers import ListSerializer
 from . import aggressive
+from .structures import AgainstDeepcopyWrapper
 
 
 logger = logging.getLogger(__name__)
@@ -16,7 +17,7 @@ PATH_KEY = "_drf__path"  # {name: string, return_fields: string[], skip_fields: 
 INACTIVE_KEY = "_drf__inactive"
 AGGRESSIVE_KEY = "_drf__aggressive"  # boolean
 # xxx
-ALL = "*"
+ALL = ":all:"
 
 
 def truncate_for_child(fields, prefix, field_name):
@@ -72,7 +73,9 @@ class QueryOptimizer(object):
     def optimize_query(self, context, instance, serializer_class):
         frame = self.restriction.frame_management.current_frame(context)
         qs = self._as_query(context, instance)
-        return self._optimize_query(frame, qs, serializer_class)
+        optimized_qs = self._optimize_query(frame, qs, serializer_class)
+        print("$$", "optimized_qs", id(optimized_qs), optimized_qs.query)
+        return optimized_qs
 
     def _as_query(self, context, data):
         # if paginated view, then data is maybe list type object.
@@ -98,9 +101,11 @@ class QueryOptimizer(object):
             return query
 
         skip_list = frame.get(self.restriction.exclude_key, None)
-        name_list = frame.get(self.restriction.include_key, None) or collect_all_name_list(serializer_class)
+        name_list = frame.get(self.restriction.include_key, None)
+        if name_list is None or name_list == [ALL]:
+            name_list = collect_all_name_list(serializer_class)
         return aggressive.aggressive_query(
-            query.all(),
+            query,
             name_list=name_list,
             skip_list=skip_list
         )
@@ -294,14 +299,28 @@ def list_serializer_factory(serializer_class, restriction=_default_restriction):
     class ReturnFieldsListSerializer(serializer_class):
         # override
         def __new__(cls, instance=None, **kwargs):
+            # print(">>>>> start", type(instance), id(instance))
             context = kwargs.get("context")
             if context:
                 if not restriction.is_active(context):
                     return serializer_class(instance, **kwargs)
                 restriction.setup(context, many=True)
                 if restriction.can_optimize(context):
-                    instance = restriction.query_optimizer.optimize_query(context, instance, cls)
-            return super(ReturnFieldsListSerializer, cls).__new__(cls, instance, **kwargs)
+                    instance = restriction.query_optimizer.optimize_query(context, instance, kwargs["child"].__class__)
+                    # print(">>>>> changed", type(instance), id(instance))
+                    # xxx: a constructor of ListSerializer calling deepcopy
+                    instance = AgainstDeepcopyWrapper(instance)
+                    # print(">>>>> wrapped", type(instance), id(instance))
+            serializer = super(ReturnFieldsListSerializer, cls).__new__(cls, instance, **kwargs)
+            return serializer
+
+        def __init__(self, *args, **kwargs):
+            super(ReturnFieldsListSerializer, self).__init__(*args, **kwargs)
+            print("@@ hmm instance", type(self.instance), id(self.instance))
+            # xxx: rest_framework.fields:Field.__new__ is not passing arguments, so.
+            if self._args and hasattr(self._args[0], "unwrap"):
+                self.instance = self._args[0].unwrap()
+                print("@@ hmm args", type(self._args[0]), id(self._args[0]))
 
         # override
         def to_representation(self, data):
