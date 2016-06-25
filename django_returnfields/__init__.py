@@ -74,7 +74,6 @@ class QueryOptimizer(object):
         frame = self.restriction.frame_management.current_frame(context)
         qs = self._as_query(context, instance)
         optimized_qs = self._optimize_query(frame, qs, serializer_class)
-        print("$$", "optimized_qs", id(optimized_qs), optimized_qs.query)
         return optimized_qs
 
     def _as_query(self, context, data):
@@ -122,10 +121,14 @@ def collect_all_name_list(serializer_class):
     for name, field in fields.items():
         if hasattr(field, "child"):
             field = field.child  # ListSerialier -> Serializer
-        if not hasattr(field, "_declared_fields"):
-            r.append(name)
-        else:
+        if hasattr(field, "child_relation"):
+            cr = field.child_relation
+            subname = getattr(cr, "lookup_field", None) or cr.queryset.model._meta.pk.name
+            r.append("{}__{}".format(name, subname))
+        elif hasattr(field, "_declared_fields"):
             r.extend("{}__{}".format(name, subname) for subname in collect_all_name_list(field.__class__))
+        else:
+            r.append(name)
     return r
 
 
@@ -316,11 +319,9 @@ def list_serializer_factory(serializer_class, restriction=_default_restriction):
 
         def __init__(self, *args, **kwargs):
             super(ReturnFieldsListSerializer, self).__init__(*args, **kwargs)
-            print("@@ hmm instance", type(self.instance), id(self.instance))
             # xxx: rest_framework.fields:Field.__new__ is not passing arguments, so.
             if self._args and hasattr(self._args[0], "unwrap"):
                 self.instance = self._args[0].unwrap()
-                print("@@ hmm args", type(self._args[0]), id(self._args[0]))
 
         # override
         def to_representation(self, data):

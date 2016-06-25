@@ -10,7 +10,7 @@ class CollectAllNameListTests(TestCase):
 
     def test_group_only(self):
         actual = self._callFUT(s.GroupOnlySerializer)
-        expected = ["id", "name", "permissions"]
+        expected = ["id", "name", "permissions__id"]
         self.assertEqual(actual, expected)
 
     def test_skill_only(self):
@@ -35,10 +35,10 @@ class CollectAllNameListTests(TestCase):
 
     def test_group_user(self):
         actual = self._callFUT(s.GroupUserSerializer)
-        expected = ['id', 'groups__id', 'groups__name', 'groups__permissions', 'username']
+        expected = ['id', 'groups__id', 'groups__name', 'groups__permissions__id', 'username']
         self.assertEqual(actual, expected)
 
     def test_group(self):
-        actual = self._callFUT(s.GroupUserSerializer)
-        expected = ['id', 'groups__id', 'groups__name', 'groups__permissions', 'username']
+        actual = self._callFUT(s.GroupSerializer)
+        expected = ['id', 'user__id', 'user__url', 'user__username', 'user__email', 'user__is_staff', 'name']
         self.assertEqual(actual, expected)
