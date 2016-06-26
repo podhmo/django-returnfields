@@ -123,9 +123,9 @@ class NameListTranslator(object):
             name_list = None
         mapping = self.get_mapping(serializer_class)
         if name_list:
-            return [mapping[name].queryname for name in name_list if name in mapping]
+            return flatten1(mapping[name].queryname for name in name_list if name in mapping)
         else:
-            return [token.queryname for token in mapping.values() if not token.nested]
+            return flatten1(token.queryname for token in mapping.values() if not token.nested)
 
     def all_name_list(self, serializer_class):
         return self.translate(serializer_class, None)
@@ -155,7 +155,7 @@ class NameListTranslator(object):
                 token = Token(name=name, nested=False, queryname="{}__{}".format(name, subname))
                 d[token.queryname] = token
             elif hasattr(field, "_declared_fields"):
-                token = Token(name=name, nested=True, queryname="{}__*__*".format(name))
+                token = Token(name=name, nested=True, queryname=["{}__*".format(name), "{}__*__*".format(name)])
                 d[token.name] = token
                 for subname, stoken in self.get_mapping(field.__class__).items():
                     fullname = "{}__{}".format(name, subname)
@@ -165,6 +165,16 @@ class NameListTranslator(object):
                 token = Token(name=name, nested=False, queryname=name)
                 d[token.queryname] = token
         return d
+
+
+def flatten1(xs):
+    r = []
+    for x in xs:
+        if isinstance(x, (list, tuple)):
+            r.extend(x)
+        else:
+            r.append(x)
+    return r
 
 
 class FrameManagement(object):
