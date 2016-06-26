@@ -136,7 +136,7 @@ class AggressiveFeatureTests(APITestCase):
 
     def test_exclude__aggressive(self):
         path = "/api/users4/?skip_fields=id&aggressive=1"
-        with self.assertNumQueries(2):
+        with self.assertNumQueries(3):
             response = self.client.get(path, format="json")
         self.assertEqual(response.status_code, status.HTTP_200_OK, msg=extract_error_message(response))
         self.assertEqual(set(response.data[0].keys()), {"username", "groups"})
