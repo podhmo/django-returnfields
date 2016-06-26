@@ -5,8 +5,8 @@ from . import serializers as s
 
 class CollectAllNameListTests(TestCase):
     def _callFUT(self, serializer_class):
-        from django_returnfields import collect_all_name_list
-        return collect_all_name_list(serializer_class)
+        from django_returnfields import NameListTranslator
+        return NameListTranslator().all_name_list(serializer_class)
 
     def test_group_only(self):
         actual = self._callFUT(s.GroupOnlySerializer)

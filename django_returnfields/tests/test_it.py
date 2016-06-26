@@ -175,7 +175,7 @@ class AggressiveFeatureTests(APITestCase):
         self.assertEqual(set(response.data[0]["groups"][0].keys()), {"id", "permissions"})
 
     def test_both__related_field__aggressive(self):
-        path = "/api/users4/?return_fields=groups&skip_fields=id,groups__permissions&aggressive=1"
+        path = "/api/users4/?return_fields=groups__*,groups&skip_fields=id,groups__permissions&aggressive=1"
         with self.assertNumQueries(2):
             response = self.client.get(path, format="json")
 

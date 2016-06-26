@@ -1,6 +1,7 @@
 # -*- coding:utf-8 -*-
 import logging
 from collections import OrderedDict
+from collections import namedtuple
 import warnings
 from rest_framework.serializers import ListSerializer
 from . import aggressive
@@ -8,7 +9,7 @@ from .structures import AgainstDeepcopyWrapper
 
 
 logger = logging.getLogger(__name__)
-
+Token = namedtuple("Token", "name, nested, queryname")
 
 # TODO: see settings
 INCLUDE_KEY = "return_fields"
@@ -67,8 +68,9 @@ class QueryOptimizer(object):
     view_aggressive_query_method_name = "aggressive_queryset"
     view_aggressive_intercept = "aggressive_intercept"
 
-    def __init__(self, restriction):
+    def __init__(self, restriction, translator=None):
         self.restriction = restriction
+        self.translator = translator or NameListTranslator()
 
     def optimize_query(self, context, instance, serializer_class):
         frame = self.restriction.frame_management.current_frame(context)
@@ -101,8 +103,7 @@ class QueryOptimizer(object):
 
         skip_list = frame.get(self.restriction.exclude_key, None)
         name_list = frame.get(self.restriction.include_key, None)
-        if name_list is None or name_list == [ALL]:
-            name_list = collect_all_name_list(serializer_class)
+        name_list = self.translator.translate(serializer_class, name_list)
         return aggressive.aggressive_query(
             query,
             name_list=name_list,
@@ -110,26 +111,60 @@ class QueryOptimizer(object):
         )
 
 
-def collect_all_name_list(serializer_class):
-    # cache
-    if hasattr(serializer_class, "_dr_fields"):
-        fields = serializer_class._dr_fields
-    else:
-        fields = serializer_class._dr_fields = serializer_class().get_fields()
-    r = []
-    # todo: supporting SerializerMethodField, ModelField
-    for name, field in fields.items():
-        if hasattr(field, "child"):
-            field = field.child  # ListSerialier -> Serializer
-        if hasattr(field, "child_relation"):
-            cr = field.child_relation
-            subname = getattr(cr, "lookup_field", None) or cr.queryset.model._meta.pk.name
-            r.append("{}__{}".format(name, subname))
-        elif hasattr(field, "_declared_fields"):
-            r.extend("{}__{}".format(name, subname) for subname in collect_all_name_list(field.__class__))
+class NameListTranslator(object):
+    ALL_LIST = [ALL]
+
+    def __init__(self):
+        self.fields_cache = {}  # hmm
+        self.mapping_cache = {}
+
+    def translate(self, serializer_class, name_list):
+        if name_list == self.ALL_LIST:
+            name_list = None
+        mapping = self.get_mapping(serializer_class)
+        if name_list:
+            return [mapping[name].queryname for name in name_list if name in mapping]
         else:
-            r.append(name)
-    return r
+            return [token.queryname for token in mapping.values() if not token.nested]
+
+    def all_name_list(self, serializer_class):
+        return self.translate(serializer_class, None)
+
+    def get_mapping(self, serializer_class):
+        mapping = self.mapping_cache.get(serializer_class)
+        if mapping is None:
+            mapping = self.mapping_cache[serializer_class] = self._get_mapping(serializer_class)
+        return mapping
+
+    def get_fields(self, serializer_class):
+        fields = self.fields_cache.get(serializer_class)
+        if fields is None:
+            fields = serializer_class._dr_fields = serializer_class().get_fields()
+        return fields
+
+    def _get_mapping(self, serializer_class):
+        fields = self.get_fields(serializer_class)
+        d = OrderedDict()
+        # todo: supporting SerializerMethodField, ModelField
+        for name, field in fields.items():
+            if hasattr(field, "child"):
+                field = field.child  # ListSerialier -> Serializer
+            if hasattr(field, "child_relation"):
+                cr = field.child_relation
+                subname = getattr(cr, "lookup_field", None) or cr.queryset.model._meta.pk.name
+                token = Token(name=name, nested=False, queryname="{}__{}".format(name, subname))
+                d[token.queryname] = token
+            elif hasattr(field, "_declared_fields"):
+                token = Token(name=name, nested=True, queryname="{}__*__*".format(name))
+                d[token.name] = token
+                for subname, stoken in self.get_mapping(field.__class__).items():
+                    fullname = "{}__{}".format(name, subname)
+                    token = Token(name=fullname, nested=False, queryname=fullname)
+                    d[token.queryname] = token
+            else:
+                token = Token(name=name, nested=False, queryname=name)
+                d[token.queryname] = token
+        return d
 
 
 class FrameManagement(object):
