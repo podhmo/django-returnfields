@@ -55,8 +55,10 @@ class NestedRestrictFeatureTests(APITestCase):
         super(NestedRestrictFeatureTests, self).setUp()
         self.login_user = User.objects.create_superuser('admin', 'myemail@test.com', '')
         from .models import Skill
-        Skill.objects.create(user=self.login_user, name="magic")
-        Skill.objects.create(user=self.login_user, name="magik")
+        Skill.objects.bulk_create([
+            Skill(user=self.login_user, name="magic"),
+            Skill(user=self.login_user, name="magik")
+        ])
         self.client.force_authenticate(self.login_user)
 
     def test_no_filtering(self):
@@ -182,6 +184,30 @@ class AggressiveFeatureTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK, msg=extract_error_message(response))
         self.assertEqual(set(response.data[0].keys()), {"groups"})
         self.assertEqual(set(response.data[0]["groups"][0].keys()), {"id", "name"})
+
+
+class PaginatedViewTests(APITestCase):
+    cls_atomics = True
+
+    @classmethod
+    def setUpTestData(self):
+        from .models import Skill
+        for i in range(6):
+            user = User.objects.create_superuser('admin{}'.format(i), 'myemail{}@test.com'.format(i), '')
+            Skill.objects.bulk_create([Skill(user=user, name="magic"), Skill(user=user, name="magik")])
+
+    def test_listing__with_pagination(self):
+        path = "/api/paginated/skill_users/?aggressive=1&page_size=5"
+        # todo: no parameter. not called
+        # todo: revive query with custom prefetch or prefetch_filter
+        with self.assertNumQueries(4):
+            response = self.client.get(path, format="json")
+            self.assertEqual(response.status_code, status.HTTP_200_OK, msg=extract_error_message(response))
+            self.assertEqual(set(response.data.keys()), set(['count', 'next', 'previous', 'results']))
+
+            self.assertEqual(len(response.data["results"]), 5)
+            self.assertEqual(set(response.data["results"][0].keys()), {'id', 'skills', 'username'})
+            self.assertEqual(set(response.data["results"][0]["skills"][0].keys()), {"id", "name"})
 
 
 class PlainCRUDActionTests(APITestCase):

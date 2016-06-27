@@ -48,17 +48,25 @@ class RequestValue(object):
     def can_optimize(self, context):
         return self.get(context).get("aggressive", False)
 
-    def is_active(self, context, active_check_keys):
+    def is_active(self, context, restriction, reloaded=False):
         if PATH_KEY in context:
             return True
         if context.get(INACTIVE_KEY):
             return False
         try:
             values = self.get(context)
-            return any(k in values for k in active_check_keys)
+            is_active = any(k in values for k in restriction.active_check_keys)
+            return is_active or self._is_active_fallback(context, restriction, reloaded)
         except KeyError:
             context[INACTIVE_KEY] = True
             return False
+
+    def _is_active_fallback(self, context, restriction, reloaded):
+        if not reloaded and self.can_optimize(context):
+            # if requesting with just only "?aggressive=1", then treated as includes=All, excludes=[]
+            return True
+        context[INACTIVE_KEY] = True
+        return False
 
 
 class FrameManagement(object):
@@ -102,7 +110,7 @@ class Restriction(object):
         return True
 
     def is_active(self, context):
-        return self.request_value.is_active(context, self.active_check_keys)
+        return self.request_value.is_active(context, self)
 
     def can_optimize(self, context):
         return self.request_value.can_optimize(context)
@@ -131,7 +139,7 @@ class Restriction(object):
             logger.debug("restriction: start with %s", frame)
         except Exception:
             logger.warn("unexpected arguments: %s", self.request_value.get(context), exc_info=True)
-        if frame[self.exclude_key] and not frame[self.include_key]:
+        if not frame[self.include_key]:
             frame[self.include_key] = [ALL]
         return frame
 

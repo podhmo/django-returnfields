@@ -9,6 +9,7 @@ router.register(r'users2', viewsets.UserViewSet2)
 router.register(r'skill_users', viewsets.SkillUserViewSet)
 router.register(r'group_users', viewsets.GroupUserViewSet)
 router.register(r'skills', viewsets.SkillViewSet)
+router.register(r'paginated/skill_users', viewsets.SkillUserPaginatedViewSet)
 
 urlpatterns = [
     url(r'^api/', include(router.urls)),
