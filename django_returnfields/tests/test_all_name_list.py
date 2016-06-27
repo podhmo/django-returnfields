@@ -5,7 +5,7 @@ from . import serializers as s
 
 class CollectAllNameListTests(TestCase):
     def _callFUT(self, serializer_class):
-        from django_returnfields import NameListTranslator
+        from django_returnfields.optimize import NameListTranslator
         return NameListTranslator().all_name_list(serializer_class)
 
     def test_group_only(self):
