@@ -51,15 +51,11 @@ class RestrictFeatureTests(APITestCase):
 class NestedRestrictFeatureTests(APITestCase):
     # see: ./url:UserViewSet.serializer_class
 
-    def setUp(self):
-        super(NestedRestrictFeatureTests, self).setUp()
-        self.login_user = User.objects.create_superuser('admin', 'myemail@test.com', '')
+    @classmethod
+    def setUpTestData(cls):
+        user = User.objects.create_superuser('admin', 'myemail@test.com', '')
         from .models import Skill
-        Skill.objects.bulk_create([
-            Skill(user=self.login_user, name="magic"),
-            Skill(user=self.login_user, name="magik")
-        ])
-        self.client.force_authenticate(self.login_user)
+        Skill.objects.bulk_create([Skill(user=user, name="magic"), Skill(user=user, name="magik")])
 
     def test_no_filtering(self):
         path = "/api/skills/"
@@ -120,12 +116,12 @@ class NestedRestrictFeatureTests(APITestCase):
 
 class AggressiveFeatureTests(APITestCase):
     # see: ./url:GroupUserViewSet.serializer_class
-    def setUp(self):
+    @classmethod
+    def setUpTestData(cls):
         from .models import Group
-        super(AggressiveFeatureTests, self).setUp()
-        self.login_user = User.objects.create_superuser('admin', 'myemail@test.com', '')
+        user = User.objects.create_superuser('admin', 'myemail@test.com', '')
         group = Group.objects.create(name="magic")
-        group.user_set.add(self.login_user)
+        group.user_set.add(user)
         group.user_set.add(User.objects.create_superuser('another', 'myemail2@test.com', ''))
         group.save()
 
@@ -187,8 +183,6 @@ class AggressiveFeatureTests(APITestCase):
 
 
 class PaginatedViewTests(APITestCase):
-    cls_atomics = True
-
     @classmethod
     def setUpTestData(self):
         from .models import Skill
