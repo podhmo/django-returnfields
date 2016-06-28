@@ -172,8 +172,17 @@ class Restriction(object):
         return hash((self.__class__, self.include_key, self.exclude_key))
 
 
-def restriction_factory(**kwargs):
-    return Restriction(RequestValue(), FrameManagement(), QueryOptimizer, **kwargs)
+class ForceAggressiveRestriction(Restriction):
+    def is_active(self, context):
+        return True
+
+    def can_optimize(self, context):
+        return True
+
+
+def restriction_factory(restriction_class=Restriction, **kwargs):
+    return restriction_class(RequestValue(), FrameManagement(), QueryOptimizer, **kwargs)
+
 
 _cache = {}
 _default_restriction = restriction_factory(include_key=INCLUDE_KEY, exclude_key=EXCLUDE_KEY)
@@ -191,7 +200,10 @@ def serializer_factory(serializer_class, restriction=_default_restriction):
         # override
         def get_fields(self):
             fields = super(ReturnFieldsSerializer, self).get_fields()
-            return self.to_restricted_fields(fields)
+            if PATH_KEY not in self.context:
+                return fields
+            else:
+                return self.to_restricted_fields(fields)
 
         # override
         def to_representation(self, instance):

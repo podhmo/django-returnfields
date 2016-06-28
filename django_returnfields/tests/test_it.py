@@ -197,7 +197,7 @@ class PaginatedViewTests(APITestCase):
         path = "/api/paginated/skill_users/?page_size=5"
         with self.assertNumQueries(7):
             with mock.patch("django_returnfields.optimize.aggressive.aggressive_query") as m:
-                m.side_effect = AssertionError("don't call!")
+                m.side_effect = AssertionError("don't call it!")
                 response = self.client.get(path, format="json")
 
             self.assertEqual(response.status_code, status.HTTP_200_OK, msg=extract_error_message(response))
@@ -210,8 +210,6 @@ class PaginatedViewTests(APITestCase):
 
     def test_listing__pagination(self):
         path = "/api/paginated/skill_users/?aggressive=1&page_size=5"
-        # todo: revive query with custom prefetch or prefetch_filter
-
         with self.assertNumQueries(4, msg="*auto prefetch/join"):
             response = self.client.get(path, format="json")
             self.assertEqual(response.status_code, status.HTTP_200_OK, msg=extract_error_message(response))
@@ -253,6 +251,33 @@ class PaginatedViewTests(APITestCase):
 
             self.assertEqual(len(response.data["results"]), 5)
             self.assertEqual([u["id"]for u in response.data['results']], [6, 5, 4, 3, 2], msg="*order by id desc")
+
+
+class ForceAggressivePaginatedViewTests(APITestCase):
+    @classmethod
+    def setUpTestData(self):
+        from .models import Skill
+        for i in range(3):
+            user = User.objects.create_superuser('admin{}'.format(i), 'myemail{}@test.com'.format(i), '')
+            Skill.objects.bulk_create([
+                Skill(user=user, name="dummy"), Skill(user=user, name="magic"), Skill(user=user, name="magik")
+            ])
+
+    def test_with_aggressive_parameter(self):
+        path = "/api/force_aggressive/skill_users/?aggressive=1"
+        with self.assertNumQueries(2):
+            response = self.client.get(path, format="json")
+            self.assertEqual(response.status_code, status.HTTP_200_OK, msg=extract_error_message(response))
+            self.assertEqual(len(response.data), 3)
+            self.assertEqual(set(response.data[0].keys()), {"id", "skills", "username"})
+
+    def test_without_aggressive_parameter(self):
+        path = "/api/force_aggressive/skill_users/"
+        with self.assertNumQueries(2):
+            response = self.client.get(path, format="json")
+            self.assertEqual(response.status_code, status.HTTP_200_OK, msg=extract_error_message(response))
+            self.assertEqual(len(response.data), 3)
+            self.assertEqual(set(response.data[0].keys()), {"id", "skills", "username"})
 
 
 class PlainCRUDActionTests(APITestCase):

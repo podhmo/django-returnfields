@@ -4,7 +4,7 @@ from rest_framework import viewsets
 from rest_framework import pagination
 from rest_framework import filters
 
-from django_returnfields import serializer_factory, restriction_factory
+from django_returnfields import serializer_factory, restriction_factory, ForceAggressiveRestriction
 
 from . import serializers
 from .models import Skill
@@ -13,6 +13,18 @@ from .models import Skill
 class UserViewSet(viewsets.ModelViewSet):
     queryset = User.objects.all()
     serializer_class = serializer_factory(serializers.UserSerializer)
+
+
+class UserViewSet2(viewsets.ModelViewSet):
+    queryset = User.objects.all()
+    serializer_class = serializer_factory(
+        serializers.UserSerializer,
+        restriction=restriction_factory(include_key="include", exclude_key="exclude"))
+
+
+class SkillUserViewSet(viewsets.ModelViewSet):
+    queryset = User.objects.all()
+    serializer_class = serializer_factory(serializers.SkillUserSerializer)
 
 
 class SkillUserPaginatedViewSet(viewsets.ModelViewSet):
@@ -32,16 +44,12 @@ class SkillUserPaginatedViewSet(viewsets.ModelViewSet):
     pagination_class = MiniPagination
 
 
-class UserViewSet2(viewsets.ModelViewSet):
+class SkillUserForceAggressiveViewSet(viewsets.ModelViewSet):
     queryset = User.objects.all()
     serializer_class = serializer_factory(
-        serializers.UserSerializer,
-        restriction=restriction_factory(include_key="include", exclude_key="exclude"))
-
-
-class SkillUserViewSet(viewsets.ModelViewSet):
-    queryset = User.objects.all()
-    serializer_class = serializer_factory(serializers.SkillUserSerializer)
+        serializers.SkillUserSerializer,
+        restriction=restriction_factory(restriction_class=ForceAggressiveRestriction)
+    )
 
 
 class GroupUserViewSet(viewsets.ModelViewSet):
