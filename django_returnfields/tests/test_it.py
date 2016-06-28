@@ -1,4 +1,5 @@
 # -*- coding:utf-8 -*-
+from unittest import mock
 from rest_framework.test import APITestCase
 from rest_framework import status
 from .models import User
@@ -190,9 +191,22 @@ class PaginatedViewTests(APITestCase):
             user = User.objects.create_superuser('admin{}'.format(i), 'myemail{}@test.com'.format(i), '')
             Skill.objects.bulk_create([Skill(user=user, name="magic"), Skill(user=user, name="magik")])
 
-    def test_listing__with_pagination(self):
+    def test_listing__without_paramater__feature_is_deactivated(self):
+        path = "/api/paginated/skill_users/?page_size=5"
+        with self.assertNumQueries(7):
+            with mock.patch("django_returnfields.optimize.aggressive.aggressive_query") as m:
+                m.side_effect = AssertionError("don't call!")
+                response = self.client.get(path, format="json")
+
+            self.assertEqual(response.status_code, status.HTTP_200_OK, msg=extract_error_message(response))
+            self.assertEqual(set(response.data.keys()), set(['count', 'next', 'previous', 'results']))
+
+            self.assertEqual(len(response.data["results"]), 5)
+            self.assertEqual(set(response.data["results"][0].keys()), {'id', 'skills', 'username'})
+            self.assertEqual(set(response.data["results"][0]["skills"][0].keys()), {"id", "name"})
+
+    def test_listing__pagination(self):
         path = "/api/paginated/skill_users/?aggressive=1&page_size=5"
-        # todo: no parameter. not called
         # todo: revive query with custom prefetch or prefetch_filter
         with self.assertNumQueries(4):
             response = self.client.get(path, format="json")
@@ -202,6 +216,27 @@ class PaginatedViewTests(APITestCase):
             self.assertEqual(len(response.data["results"]), 5)
             self.assertEqual(set(response.data["results"][0].keys()), {'id', 'skills', 'username'})
             self.assertEqual(set(response.data["results"][0]["skills"][0].keys()), {"id", "name"})
+
+    def test_listing__pagination__with_skip(self):
+        path = "/api/paginated/skill_users/?aggressive=1&page_size=5&skip_fields=skills"
+        with self.assertNumQueries(3):
+            response = self.client.get(path, format="json")
+            self.assertEqual(response.status_code, status.HTTP_200_OK, msg=extract_error_message(response))
+            self.assertEqual(set(response.data.keys()), set(['count', 'next', 'previous', 'results']))
+
+            self.assertEqual(len(response.data["results"]), 5)
+            self.assertEqual(set(response.data["results"][0].keys()), {'id', 'username'})
+
+    def test_listing__pagination__with_skip2(self):
+        path = "/api/paginated/skill_users/?aggressive=1&page_size=5&skip_fields=skills__id,skills__name"
+        with self.assertNumQueries(4):
+            response = self.client.get(path, format="json")
+            self.assertEqual(response.status_code, status.HTTP_200_OK, msg=extract_error_message(response))
+            self.assertEqual(set(response.data.keys()), set(['count', 'next', 'previous', 'results']))
+
+            self.assertEqual(len(response.data["results"]), 5)
+            self.assertEqual(set(response.data["results"][0].keys()), {'id', 'skills', 'username'})
+            self.assertEqual(set(response.data["results"][0]["skills"][0].keys()), set())
 
 
 class PlainCRUDActionTests(APITestCase):
