@@ -10,16 +10,14 @@ Token = namedtuple("Token", "name, nested, queryname")
 
 class QueryOptimizer(object):
     view_aggressive_query_method_name = "aggressive_queryset"
-    view_aggressive_intercept = "aggressive_intercept"
 
     def __init__(self, restriction, translator=None):
         self.restriction = restriction
         self.translator = translator or NameListTranslator()
 
     def optimize_query(self, context, instance, serializer_class):
-        frame = self.restriction.frame_management.current_frame(context)
         qs = self._as_query(context, instance)
-        optimized_qs = self._optimize_query(frame, qs, serializer_class)
+        optimized_qs = self._optimize_query(context, qs, serializer_class)
         return optimized_qs
 
     def _as_query(self, context, data):
@@ -34,31 +32,33 @@ class QueryOptimizer(object):
         # get optimized query from view object
         if "view" in context:
             view = context["view"]
-
             # re-attach filter
             if hasattr(view, "filter_queryset"):
                 qs = view.filter_queryset(qs)
-
-            # custom hook
-            optimize_fn_by_view = getattr(view, self.view_aggressive_query_method_name, None)
-            if optimize_fn_by_view:
-                if getattr(view, self.view_aggressive_intercept, False):
-                    return qs
-                qs = optimize_fn_by_view(qs)
         return qs
 
-    def _optimize_query(self, frame, query, serializer_class):
+    def _optimize_query(self, context, query, serializer_class):
         if not hasattr(query, "all"):
+            logger.warning("%s doen't have all method. this is not query", query)
             return query
+
+        frame = self.restriction.frame_management.current_frame(context)
 
         skip_list = frame.get(self.restriction.exclude_key, None)
         name_list = frame.get(self.restriction.include_key, None)
         name_list = self.translator.translate(serializer_class, name_list)
-        return aggressive.aggressive_query(
+        aqs = aggressive.aggressive_query(
             query,
             name_list=name_list,
             skip_list=skip_list
         )
+        # custom hook
+        if "view" in context:
+            view = context["view"]
+            custom_fn_by_view = getattr(view, self.view_aggressive_query_method_name, None)
+            if custom_fn_by_view:
+                aqs = custom_fn_by_view(aqs)
+        return aqs
 
 
 class NameListTranslator(object):

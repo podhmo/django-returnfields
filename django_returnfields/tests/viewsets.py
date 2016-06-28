@@ -21,6 +21,9 @@ class SkillUserPaginatedViewSet(viewsets.ModelViewSet):
     filter_backends = (filters.OrderingFilter, )
     ordering_fields = "__all__"
 
+    def aggressive_queryset(self, aqs):
+        return aqs.prefetch_filter(skills=lambda qs: qs.filter(name__startswith="ma"))
+
     class MiniPagination(pagination.PageNumberPagination):
         page_size = 5
         page_size_query_param = 'page_size'

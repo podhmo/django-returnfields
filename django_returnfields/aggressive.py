@@ -6,8 +6,7 @@ def aggressive_query(qs, name_list, skip_list=None):
     aqs = from_queryset(qs, name_list, more_specific=True)
     if skip_list:
         aqs = aqs.skip_filter(skip_list)
-    qs = aqs.to_queryset()
-    return qs
+    return aqs
 
 
 def revive_query(query_or_extraction):
