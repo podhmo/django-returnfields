@@ -2,6 +2,7 @@
 from .models import User
 from rest_framework import viewsets
 from rest_framework import pagination
+from rest_framework import filters
 
 from django_returnfields import serializer_factory, restriction_factory
 
@@ -17,6 +18,8 @@ class UserViewSet(viewsets.ModelViewSet):
 class SkillUserPaginatedViewSet(viewsets.ModelViewSet):
     queryset = User.objects.all()
     serializer_class = serializer_factory(serializers.SkillUserSerializer)
+    filter_backends = (filters.OrderingFilter, )
+    ordering_fields = "__all__"
 
     class MiniPagination(pagination.PageNumberPagination):
         page_size = 5

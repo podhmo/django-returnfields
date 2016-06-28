@@ -238,6 +238,16 @@ class PaginatedViewTests(APITestCase):
             self.assertEqual(set(response.data["results"][0].keys()), {'id', 'skills', 'username'})
             self.assertEqual(set(response.data["results"][0]["skills"][0].keys()), set())
 
+    def test_listing__pagination__ordered(self):
+        path = "/api/paginated/skill_users/?aggressive=1&page_size=5&ordering=-id&return_fields=id"
+        with self.assertNumQueries(3):
+            response = self.client.get(path, format="json")
+            self.assertEqual(response.status_code, status.HTTP_200_OK, msg=extract_error_message(response))
+            self.assertEqual(set(response.data.keys()), set(['count', 'next', 'previous', 'results']))
+
+            self.assertEqual(len(response.data["results"]), 5)
+            self.assertEqual([u["id"]for u in response.data['results']], [6, 5, 4, 3, 2])
+
 
 class PlainCRUDActionTests(APITestCase):
     def setUp(self):

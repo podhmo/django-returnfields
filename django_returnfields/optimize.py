@@ -34,11 +34,17 @@ class QueryOptimizer(object):
         # get optimized query from view object
         if "view" in context:
             view = context["view"]
+
+            # re-attach filter
+            if hasattr(view, "filter_queryset"):
+                qs = view.filter_queryset(qs)
+
+            # custom hook
             optimize_fn_by_view = getattr(view, self.view_aggressive_query_method_name, None)
             if optimize_fn_by_view:
-                qs = optimize_fn_by_view(qs)
                 if getattr(view, self.view_aggressive_intercept, False):
                     return qs
+                qs = optimize_fn_by_view(qs)
         return qs
 
     def _optimize_query(self, frame, query, serializer_class):
