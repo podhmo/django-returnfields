@@ -79,3 +79,46 @@ class CollectAllNameListTests(TestCase):
         actual = self._callFUT(ForDependsTestUserSerializer)
         expected = ['id', 'username', 'username']
         self.assertEqual(actual, expected)
+
+
+class CollectAllTranslateTests(TestCase):
+    def _makeOne(self):
+        from django_returnfields.optimize import NameListTranslator
+        return NameListTranslator()
+
+    def setUp(self):
+        from .models import User
+        from django_returnfields import contextual
+
+        def has_xxx_context(xxx, replaced):
+            def check(token, context):
+                return replaced if xxx in context else []
+            return check
+
+        class ForContextualTestUserSerializer(serializers.ModelSerializer):
+            class Meta:
+                model = User
+                fields = ('id', 'username')
+
+            username = serializers.SerializerMethodField()
+
+            @contextual(has_xxx_context('with_username', 'username'))
+            def get_username(self, ob):
+                return ob.username.split(" ", 1)[0]
+        self.Serializer = ForContextualTestUserSerializer
+
+    def test_with_contextual_decorator(self):
+        target = self._makeOne()
+        context = {}
+
+        actual = target.translate(self.Serializer, None, context)
+        expected = ['id']
+        self.assertEqual(actual, expected)
+
+    def test_with_contextual_decorator2(self):
+        target = self._makeOne()
+        context = {"with_username": True}
+
+        actual = target.translate(self.Serializer, None, context)
+        expected = ['id', "username"]
+        self.assertEqual(actual, expected)
