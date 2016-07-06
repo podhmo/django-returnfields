@@ -6,7 +6,7 @@ from rest_framework.serializers import ListSerializer
 from .structures import AgainstDeepcopyWrapper
 from .constants import ALL
 from .optimize import QueryOptimizer
-
+from .optimize import contextual, depends  # NOQA
 
 logger = logging.getLogger(__name__)
 

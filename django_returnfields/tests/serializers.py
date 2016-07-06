@@ -1,18 +1,13 @@
 # -*- coding:utf-8 -*-
 from rest_framework import serializers
 from .models import Skill, User, Group
+from django_returnfields import depends
 
 
 class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         fields = ('id', 'url', 'username', 'email', 'is_staff')
-
-
-class SlugUserSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = User
-        fields = '__all__'
 
 
 class SkillOnlySerializer(serializers.ModelSerializer):

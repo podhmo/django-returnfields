@@ -1,5 +1,6 @@
 # -*- coding:utf-8 -*-
 from django.test import TestCase
+from rest_framework import serializers
 from . import serializers as s
 
 
@@ -43,7 +44,38 @@ class CollectAllNameListTests(TestCase):
         expected = ['id', 'user__id', 'user__url', 'user__username', 'user__email', 'user__is_staff', 'name']
         self.assertEqual(actual, expected)
 
-    def test_slug_user(self):
-        actual = self._callFUT(s.SlugUserSerializer)
+    def test_fields_value_is___all__(self):
+        from .models import User
+
+        class SlugUserSerializer(serializers.ModelSerializer):
+            class Meta:
+                model = User
+                fields = '__all__'
+
+        actual = self._callFUT(SlugUserSerializer)
         expected = ['id', 'password', 'last_login', 'is_superuser', 'username', 'first_name', 'last_name', 'email', 'is_staff', 'is_active', 'date_joined', 'groups__id', 'user_permissions__id']
+        self.assertEqual(actual, expected)
+
+    def test_with_depends_decorator(self):
+        from .models import User
+        from django_returnfields import depends
+
+        class ForDependsTestUserSerializer(serializers.ModelSerializer):
+            class Meta:
+                model = User
+                fields = ('id', 'first_name', "last_name")
+
+            first_name = serializers.SerializerMethodField()
+            last_name = serializers.SerializerMethodField()
+
+            @depends("username")
+            def get_first_name(self, ob):
+                return ob.username.split(" ", 1)[0]
+
+            @depends("username")
+            def get_last_name(self, ob):
+                return ob.username.split(" ", 1)[1]
+
+        actual = self._callFUT(ForDependsTestUserSerializer)
+        expected = ['id', 'username', 'username']
         self.assertEqual(actual, expected)

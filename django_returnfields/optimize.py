@@ -1,11 +1,31 @@
 import logging
-from collections import namedtuple
 from collections import OrderedDict
 from . import aggressive
 from . import constants
 
 logger = logging.getLogger(__name__)
-Token = namedtuple("Token", "name, nested, queryname")
+DECORATE_KEY = "_drf_decorated"
+
+
+class StaticToken(object):
+    def __init__(self, name, nested, queryname):
+        self.name = name
+        self.nested = nested
+        self.queryname = queryname
+
+    def __call__(self, context):
+        return self.queryname
+
+
+class DynamicToken(object):
+    def __init__(self, name, nested, fn):
+        self.name = name
+        self.nested = nested
+        self.fn = fn
+
+    # with decorators
+    def __call__(self, context):
+        return self.fn(self, context)
 
 
 class QueryOptimizer(object):
@@ -46,7 +66,7 @@ class QueryOptimizer(object):
 
         skip_list = frame.get(self.restriction.exclude_key, None)
         name_list = frame.get(self.restriction.include_key, None)
-        name_list = self.translator.translate(serializer_class, name_list)
+        name_list = self.translator.translate(serializer_class, name_list, context)
         aqs = aggressive.aggressive_query(
             query,
             name_list=name_list,
@@ -65,20 +85,20 @@ class NameListTranslator(object):
     ALL_LIST = [constants.ALL]
 
     def __init__(self):
-        self.fields_cache = {}  # hmm
-        self.mapping_cache = {}
+        self.fields_cache = {}  # <Serializer class> -> (str -> <Field>)
+        self.mapping_cache = {}  # <Serializer class> -> (str -> <Token>)
 
-    def translate(self, serializer_class, name_list):
+    def translate(self, serializer_class, name_list, context):
         if name_list == self.ALL_LIST:
             name_list = None
         mapping = self.get_mapping(serializer_class)
         if name_list:
-            return flatten1(mapping[name].queryname for name in name_list if name in mapping)
+            return flatten1(mapping[name](context) for name in name_list if name in mapping)
         else:
-            return flatten1(token.queryname for token in mapping.values() if not token.nested)
+            return flatten1(token(context) for token in mapping.values() if not token.nested)
 
     def all_name_list(self, serializer_class):
-        return self.translate(serializer_class, None)
+        return self.translate(serializer_class, None, {})
 
     def get_mapping(self, serializer_class):
         mapping = self.mapping_cache.get(serializer_class)
@@ -89,30 +109,36 @@ class NameListTranslator(object):
     def get_fields(self, serializer_class):
         fields = self.fields_cache.get(serializer_class)
         if fields is None:
-            fields = serializer_class._dr_fields = serializer_class().get_fields()
+            fields = self.fields_cache[serializer_class] = serializer_class().get_fields()
         return fields
 
     def _get_mapping(self, serializer_class):
         fields = self.get_fields(serializer_class)
         d = OrderedDict()
-        # todo: supporting SerializerMethodField, ModelField
+        # todo: supporting SerializerMethodField
         for name, field in fields.items():
+            # decorated field
+            token_factory = get_decoration(serializer_class, name, field)
+            if token_factory is not None:
+                d[name] = token_factory(name)
+                continue
+
             if hasattr(field, "child"):
                 field = field.child  # ListSerialier -> Serializer
-            if hasattr(field, "child_relation"):
+            if hasattr(field, "child_relation"):  # ModelField
                 cr = field.child_relation
                 subname = getattr(cr, "lookup_field", None) or cr.queryset.model._meta.pk.name
-                token = Token(name=name, nested=False, queryname="{}__{}".format(name, subname))
+                token = StaticToken(name=name, nested=False, queryname="{}__{}".format(name, subname))
                 d[token.queryname] = token
-            elif hasattr(field, "_declared_fields"):
-                token = Token(name=name, nested=True, queryname=["{}__*".format(name), "{}__*__*".format(name)])
+            elif hasattr(field, "_declared_fields"):  # sub Serializer
+                token = StaticToken(name=name, nested=True, queryname=["{}__*".format(name), "{}__*__*".format(name)])
                 d[token.name] = token
                 for subname, stoken in self.get_mapping(field.__class__).items():
                     fullname = "{}__{}".format(name, subname)
-                    token = Token(name=fullname, nested=False, queryname=fullname)
+                    token = StaticToken(name=fullname, nested=False, queryname=fullname)
                     d[token.queryname] = token
             else:
-                token = Token(name=name, nested=False, queryname=name)
+                token = StaticToken(name=name, nested=False, queryname=name)
                 d[token.queryname] = token
         return d
 
@@ -125,3 +151,32 @@ def flatten1(xs):
         else:
             r.append(x)
     return r
+
+
+# decorators
+def get_decoration(serializer_class, name, serializer_method_field):
+    # xxx: only support SerializerMethodField
+    method = getattr(serializer_class, "get_{}".format(name), None)
+    if method is None:
+        return method
+    return getattr(method, DECORATE_KEY, None)
+
+
+def set_decoration(serialiezer_method, fn):
+    setattr(serialiezer_method, DECORATE_KEY, fn)
+
+
+def depends(on=[], nested=False):
+    def _depends(field):
+        fn = lambda token, context: on
+        factory = lambda name: DynamicToken(name, nested, fn)
+        set_decoration(field, factory)
+        return field
+    return _depends
+
+
+def contextual(fn, nested=False):
+    def _contextual(field):
+        set_decoration(field, lambda name: DynamicToken(name, nested, fn))
+        return field
+    return _contextual
