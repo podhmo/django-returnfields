@@ -9,6 +9,12 @@ class UserSerializer(serializers.ModelSerializer):
         fields = ('id', 'url', 'username', 'email', 'is_staff')
 
 
+class SlugUserSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = User
+        fields = '__all__'
+
+
 class SkillOnlySerializer(serializers.ModelSerializer):
     class Meta:
         model = Skill

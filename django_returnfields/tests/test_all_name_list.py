@@ -42,3 +42,8 @@ class CollectAllNameListTests(TestCase):
         actual = self._callFUT(s.GroupSerializer)
         expected = ['id', 'user__id', 'user__url', 'user__username', 'user__email', 'user__is_staff', 'name']
         self.assertEqual(actual, expected)
+
+    def test_slug_user(self):
+        actual = self._callFUT(s.SlugUserSerializer)
+        expected = ['id', 'password', 'last_login', 'is_superuser', 'username', 'first_name', 'last_name', 'email', 'is_staff', 'is_active', 'date_joined', 'groups__id', 'user_permissions__id']
+        self.assertEqual(actual, expected)
