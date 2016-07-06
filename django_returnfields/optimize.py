@@ -112,13 +112,16 @@ class NameListTranslator(object):
             fields = self.fields_cache[serializer_class] = serializer_class().get_fields()
         return fields
 
+    def get_decoration(self, serializer_class, name, field):
+        return get_decoration(serializer_class, name, field)
+
     def _get_mapping(self, serializer_class):
         fields = self.get_fields(serializer_class)
         d = OrderedDict()
         # todo: supporting SerializerMethodField
         for name, field in fields.items():
             # decorated field
-            token_factory = get_decoration(serializer_class, name, field)
+            token_factory = self.get_decoration(serializer_class, name, field)
             if token_factory is not None:
                 d[name] = token_factory(name)
                 continue
