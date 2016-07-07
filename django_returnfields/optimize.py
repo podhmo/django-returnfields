@@ -120,6 +120,9 @@ class NameListTranslator(object):
         d = OrderedDict()
         # todo: supporting SerializerMethodField
         for name, field in fields.items():
+            if field.write_only:
+                continue
+
             # decorated field
             token_factory = self.get_decoration(serializer_class, name, field)
             if token_factory is not None:
