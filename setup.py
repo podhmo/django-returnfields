@@ -17,6 +17,7 @@ except IOError:
 
 install_requires = [
     'djangorestframework',
+    'django-aggressivequery'
 ]
 
 
