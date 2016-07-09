@@ -142,8 +142,10 @@ class CollectAllDeepNestedTests(TestCase):
 
         actual = target.translate(self.GroupSerializer, ["users__permissions"], context)
         expected = [
-            'users__permissions__*',
-            'users__permissions__*__*',
+            'users__permissions__codename',
+            'users__permissions__content_type',
+            'users__permissions__id',
+            'users__permissions__name'
         ]
         self.assertEqual(sorted(actual), sorted(expected))
 

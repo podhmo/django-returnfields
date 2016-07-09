@@ -21,9 +21,19 @@ class StaticToken(object):
         return self.queryname
 
 
-class RelatedToken(StaticToken):
+class RelatedToken(object):
+    def __init__(self, translator, name, nested, queryname, mapping):
+        self.translator = translator
+        self.name = name
+        self.nested = nested
+        self.queryname = queryname
+        self.mapping = mapping
+
+    def renamed(self, fullname):
+        return self.__class__(self, name=fullname, nested=self.nested, queryname=fullname, mapping=self.mapping)
+
     def __call__(self, context):
-        return ["{}__*".format(self.queryname), "{}__*__*".format(self.queryname)]
+        return ["{}__{}".format(self.queryname, t(context)) for t in self.mapping.values()]
 
 
 class DynamicToken(object):
@@ -153,12 +163,13 @@ class NameListTranslator(object):
                 token = StaticToken(self, name=name, nested=False, queryname="{}__{}".format(name, subname))
                 d[token.queryname] = token
             elif hasattr(field, "_declared_fields"):  # sub Serializer
-                token = RelatedToken(self, name=name, nested=True, queryname=name)
-                d[token.name] = token
-                for subname, stoken in self.get_mapping(field.__class__).items():
+                mapping = self.get_mapping(field.__class__)
+                for subname, stoken in mapping.items():
                     fullname = "{}__{}".format(name, subname)
                     token = stoken.renamed(fullname)
                     d[fullname] = token
+                token = RelatedToken(self, name=name, nested=True, queryname=name, mapping=mapping)
+                d[token.name] = token
             else:
                 token = StaticToken(self, name=name, nested=False, queryname=name)
                 d[token.queryname] = token
