@@ -1,17 +1,20 @@
 # -*- coding:utf-8 -*-
-from collections import OrderedDict
-from rest_framework.serializers import ListSerializer
-from . import aggressive
+import logging
 import warnings
+from collections import OrderedDict
+from .structures import AgainstDeepcopyWrapper
+from .constants import ALL
+from .optimize import QueryOptimizer
+from .optimize import contextual, depends  # NOQA
 
+logger = logging.getLogger(__name__)
 
 # TODO: see settings
 INCLUDE_KEY = "return_fields"
 EXCLUDE_KEY = "skip_fields"
 PATH_KEY = "_drf__path"  # {name: string, return_fields: string[], skip_fields: string[]}[]
+INACTIVE_KEY = "_drf__inactive"
 AGGRESSIVE_KEY = "_drf__aggressive"  # boolean
-# xxx
-ALL = ":all:"
 
 
 def truncate_for_child(fields, prefix, field_name):
@@ -32,107 +35,161 @@ def is_already_upgraded(cls):
     return hasattr(cls, "to_restricted_fields")
 
 
-class Restriction(object):
-    def __init__(self, include_key=INCLUDE_KEY, exclude_key=EXCLUDE_KEY, path_key=PATH_KEY):
-        self.include_key = include_key
-        self.exclude_key = exclude_key
-        self.path_key = path_key
-        self.active_check_keys = (self.include_key, self.exclude_key)
+class RequestValue(object):
+    # default is request.GET
+    def get(self, context):
+        return context["request"].GET
 
-    def setup(self, serializer):
-        if PATH_KEY in serializer.context:
-            return False
-
-        frame = {
-            "name": "",
-            self.include_key: self.parse_passed_values(serializer, self.include_key),
-            self.exclude_key: self.parse_passed_values(serializer, self.exclude_key),
-        }
-        if frame[self.exclude_key] and not frame[self.include_key]:
-            frame[self.include_key] = [ALL]
-        serializer.context[PATH_KEY] = [frame]
-
-        if frame.get(INCLUDE_KEY, None) and not frame.get(EXCLUDE_KEY, None):
-            serializer.context[AGGRESSIVE_KEY] = "include"
-        elif frame.get(EXCLUDE_KEY, None):
-            serializer.context[AGGRESSIVE_KEY] = "exclude"
-        return True
-
-    def get_passed_values(self, serializer):
-        return serializer.context["request"].GET
-
-    def is_active(self, serializer):
-        try:
-            values = self.get_passed_values(serializer)
-        except KeyError:
-            return False
-        return any(k in values for k in self.active_check_keys)
-
-    def parse_passed_values(self, serializer, key):
-        fields_names_string = self.get_passed_values(serializer).get(key, "")
+    def parse(self, context, key):
+        fields_names_string = self.get(context).get(key, "")
         return [field_name.strip() for field_name in fields_names_string.split(",") if field_name]
 
-    def current_frame(self, serializer):
-        return serializer.context[self.path_key][-1]
+    def can_optimize(self, context):
+        return self.get(context).get("aggressive", False)
 
-    def push_frame(self, serializer, frame):
-        # print("{}>>> {}".format(" " * len(serializer.context[self.path_key]), frame))
-        return serializer.context[self.path_key].append(frame)
+    def is_active(self, context, restriction, reloaded=False):
+        if PATH_KEY in context:
+            return True
+        if context.get(INACTIVE_KEY):
+            return False
+        try:
+            values = self.get(context)
+            is_active = any(k in values for k in restriction.active_check_keys)
+            return is_active or self._is_active_fallback(context, restriction, reloaded)
+        except KeyError:
+            context[INACTIVE_KEY] = True
+            return False
 
-    def pop_frame(self, serializer):
-        frame = serializer.context[self.path_key].pop()
-        # print("{}<<< {}".format(" " * len(serializer.context[self.path_key]), frame))
+    def _is_active_fallback(self, context, restriction, reloaded):
+        if not reloaded and self.can_optimize(context):
+            # if requesting with just only "?aggressive=1", then treated as includes=All, excludes=[]
+            return True
+        context[INACTIVE_KEY] = True
+        return False
+
+
+class FrameManagement(object):
+    def current_frame(self, context):
+        return context[PATH_KEY][-1]
+
+    def push_frame(self, context, frame):
+        # print("{}>>> {}".format(" " * len(context[PATH_KEY]), frame))
+        return context[PATH_KEY].append(frame)
+
+    def pop_frame(self, context):
+        frame = context[PATH_KEY].pop()
+        # print("{}<<< {}".format(" " * len(context[PATH_KEY]), frame))
         return frame
 
+    def is_toplevel(self, context):
+        return context[PATH_KEY][-1].get("toplevel", False)
+
+    def has_frame(self, context):
+        return PATH_KEY in context
+
+    def init_frame(self, context, frame):
+        context[PATH_KEY] = [frame]
+
+
+class Restriction(object):
+    def __init__(self, request_value, frame_management, query_optimizer_cls,
+                 include_key=INCLUDE_KEY, exclude_key=EXCLUDE_KEY):
+        self.request_value = request_value
+        self.frame_management = frame_management
+        self.query_optimizer = query_optimizer_cls(self)
+        self.include_key = include_key
+        self.exclude_key = exclude_key
+        self.active_check_keys = (self.include_key, self.exclude_key)
+
+    def setup(self, context, many=False):
+        if self.frame_management.has_frame(context):
+            return self.frame_management.is_toplevel(context)
+        frame = self._make_initial_frame(context)
+        self.frame_management.init_frame(context, frame)
+        return True
+
+    def is_active(self, context):
+        return self.request_value.is_active(context, self)
+
+    def can_optimize(self, context):
+        return self.request_value.can_optimize(context)
+
     def to_restricted_fields(self, serializer, fields):
-        frame = self.current_frame(serializer)
+        frame = self.frame_management.current_frame(serializer.context)
+        return self._make_new_fields(frame, fields)
+
+    def to_representation(self, serializer, data):
+        field_name = serializer.field_name
+        frame = self.frame_management.current_frame(serializer.context)
+        new_frame = self._make_new_frame(frame, field_name)
+        self.frame_management.push_frame(serializer.context, new_frame)
+        ret = serializer._to_representation(data)
+        self.frame_management.pop_frame(serializer.context)
+        return ret
+
+    def _make_initial_frame(self, context):
+        frame = {
+            "name": "",
+            "toplevel": True,
+            self.include_key: self.request_value.parse(context, self.include_key),
+            self.exclude_key: self.request_value.parse(context, self.exclude_key),
+        }
+        try:
+            logger.debug("restriction: start with %s", frame)
+        except Exception:
+            logger.warn("unexpected arguments: %s", self.request_value.get(context), exc_info=True)
+        if not frame[self.include_key]:
+            frame[self.include_key] = [ALL]
+        return frame
+
+    def _make_new_fields(self, frame, fields):
         return_fields = frame[self.include_key]
         if ALL in return_fields:
-            ret = fields
+            new_fields = fields
         else:
             # include filter
-            ret = OrderedDict()
+            new_fields = OrderedDict()
             relations = [field_name.split("__", 2)[0] for field_name in return_fields]
             for k in fields.keys():
                 if k in return_fields or k in relations:
-                    ret[k] = fields[k]
+                    new_fields[k] = fields[k]
         # exclude filter
         for k in frame[self.exclude_key]:
-            ret.pop(k, None)
-        return ret
+            new_fields.pop(k, None)
+        return new_fields
 
-    def to_representation(self, serializer, data, many=True):
-        field_name = serializer.field_name
-        frame = self.current_frame(serializer)
-
+    def _make_new_frame(self, frame, field_name):
         prefix = "{}__".format(field_name)
         new_frame = {
             "name": field_name,
             self.include_key: truncate_for_child(frame[self.include_key], prefix, field_name),
             self.exclude_key: truncate_for_child(frame[self.exclude_key], prefix, field_name)
         }
-        self.push_frame(serializer, new_frame)
-        if many and "aggressive" in self.get_passed_values(serializer):
-            data = self.optimize_query_aggressively(new_frame, data, serializer.context.get(AGGRESSIVE_KEY))
-        ret = serializer._to_representation(data)
-        self.pop_frame(serializer)
-        return ret
-
-    def optimize_query_aggressively(self, frame, data, optimize_type):
-        if hasattr(data, "all"):
-            if optimize_type == 'exclude':
-                return aggressive.safe_defer(data.all(), frame[self.exclude_key])
-            elif optimize_type == 'include':
-                return aggressive.safe_only(data.all(), frame[self.include_key])
-        return data
+        return new_frame
 
     def __hash__(self):
-        return hash((self.__class__, self.include_key, self.path_key, self.exclude_key))
+        return hash((self.__class__, self.include_key, self.exclude_key))
+
+
+class ForceAggressiveRestriction(Restriction):
+    def is_active(self, context):
+        return True
+
+    def can_optimize(self, context):
+        return True
+
+
+def restriction_factory(restriction_class=Restriction, **kwargs):
+    return restriction_class(RequestValue(), FrameManagement(), QueryOptimizer, **kwargs)
+
 
 _cache = {}
+_default_restriction = restriction_factory(include_key=INCLUDE_KEY, exclude_key=EXCLUDE_KEY)
 
 
-def serializer_factory(serializer_class, restriction=Restriction(include_key=INCLUDE_KEY, exclude_key=EXCLUDE_KEY, path_key=PATH_KEY)):
+def serializer_factory(serializer_class, restriction=_default_restriction):
+    from rest_framework.serializers import ListSerializer
+
     k = (serializer_class, False, restriction.__hash__())
     if k in _cache:
         return _cache[k]
@@ -144,13 +201,16 @@ def serializer_factory(serializer_class, restriction=Restriction(include_key=INC
         # override
         def get_fields(self):
             fields = super(ReturnFieldsSerializer, self).get_fields()
-            return self.to_restricted_fields(fields)
+            if PATH_KEY not in self.context:
+                return fields
+            else:
+                return self.to_restricted_fields(fields)
 
         # override
         def to_representation(self, instance):
-            if not restriction.is_active(self):
+            if not restriction.is_active(self.context):
                 return super(ReturnFieldsSerializer, self).to_representation(instance)
-            elif not restriction.setup(self) and not self.field_name:
+            elif not restriction.setup(self.context, many=False) and not self.field_name:
                 return super(ReturnFieldsSerializer, self).to_representation(instance)
             return restriction.to_representation(self, instance)
 
@@ -158,7 +218,7 @@ def serializer_factory(serializer_class, restriction=Restriction(include_key=INC
             return super(ReturnFieldsSerializer, self).to_representation(instance)
 
         def to_restricted_fields(self, fields):
-            if restriction.is_active(self):
+            if restriction.is_active(self.context):
                 return restriction.to_restricted_fields(self, fields)
             else:
                 return fields
@@ -181,7 +241,7 @@ def serializer_factory(serializer_class, restriction=Restriction(include_key=INC
     return ReturnFieldsSerializer
 
 
-def list_serializer_factory(serializer_class, restriction=Restriction(include_key=INCLUDE_KEY, exclude_key=EXCLUDE_KEY, path_key=PATH_KEY)):
+def list_serializer_factory(serializer_class, restriction=_default_restriction):
     k = (serializer_class, True, restriction.__hash__())
     if k in _cache:
         return _cache[k]
@@ -191,12 +251,35 @@ def list_serializer_factory(serializer_class, restriction=Restriction(include_ke
 
     class ReturnFieldsListSerializer(serializer_class):
         # override
+        def __new__(cls, instance=None, **kwargs):
+            # print(">>>>> start", type(instance), id(instance))
+            context = kwargs.get("context")
+            if context:
+                if not restriction.is_active(context):
+                    return serializer_class(instance, **kwargs)
+                restriction.setup(context, many=True)
+                if restriction.can_optimize(context):
+                    instance = restriction.query_optimizer.optimize_query(context, instance, kwargs["child"].__class__)
+                    # print(">>>>> changed", type(instance), id(instance))
+                    # xxx: a constructor of ListSerializer calling deepcopy
+                    instance = AgainstDeepcopyWrapper(instance)
+                    # print(">>>>> wrapped", type(instance), id(instance))
+            serializer = super(ReturnFieldsListSerializer, cls).__new__(cls, instance, **kwargs)
+            return serializer
+
+        def __init__(self, *args, **kwargs):
+            super(ReturnFieldsListSerializer, self).__init__(*args, **kwargs)
+            # xxx: rest_framework.fields:Field.__new__ is not passing arguments, so.
+            if self._args and hasattr(self._args[0], "unwrap"):
+                self.instance = self._args[0].unwrap()
+
+        # override
         def to_representation(self, data):
-            if not restriction.is_active(self):
+            if not restriction.is_active(self.context):
                 return super(ReturnFieldsListSerializer, self).to_representation(data)
-            elif not restriction.setup(self) and not self.field_name:
+            elif not restriction.setup(self.context, many=True) and not self.field_name:
                 return super(ReturnFieldsListSerializer, self).to_representation(data)
-            return restriction.to_representation(self, data, many=True)
+            return restriction.to_representation(self, data)
 
         def _to_representation(self, data):
             return super(ReturnFieldsListSerializer, self).to_representation(data)

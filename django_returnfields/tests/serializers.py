@@ -1,9 +1,6 @@
 # -*- coding:utf-8 -*-
-from django.contrib.auth.models import User
-from django.contrib.auth.models import Group
 from rest_framework import serializers
-
-from .models import Skill
+from .models import Skill, User, Group
 
 
 class UserSerializer(serializers.ModelSerializer):

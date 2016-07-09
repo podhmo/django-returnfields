@@ -6,14 +6,14 @@ from . import viewsets
 router = routers.DefaultRouter()
 router.register(r'users', viewsets.UserViewSet)
 router.register(r'users2', viewsets.UserViewSet2)
-router.register(r'users3', viewsets.SkillUserViewSet)
-router.register(r'users4', viewsets.GroupUserViewSet)
+router.register(r'skill_users', viewsets.SkillUserViewSet)
+router.register(r'group_users', viewsets.GroupUserViewSet)
 router.register(r'skills', viewsets.SkillViewSet)
+router.register(r'paginated/skill_users', viewsets.SkillUserPaginatedViewSet)
+router.register(r'force_aggressive/skill_users', viewsets.SkillUserForceAggressiveViewSet)
 
 urlpatterns = [
     url(r'^api/', include(router.urls)),
     url(r'^api-auth/', include('rest_framework.urls', namespace='rest_framework'))
 ]
 urlpatterns += staticfiles_urlpatterns()
-
-ROOT_URLCONF = 'booklista_sns.urls'
