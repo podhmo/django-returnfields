@@ -12,16 +12,16 @@ LOGGING = {
         },
     },
     'handlers': {
-        'stderr': {
+        'stdout': {
             'level': 'DEBUG',
             'formatter': 'verbose',
             'class': 'logging.StreamHandler',
-            'stream': sys.stderr,
+            'stream': sys.stdout,
         },
     },
     'loggers': {
         'django.db': {
-            'handlers': ['stderr'],
+            'handlers': ['stdout'],
             'level': 'DEBUG',
         }
     }
