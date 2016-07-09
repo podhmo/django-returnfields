@@ -73,12 +73,14 @@ class App(object):
     def __init__(self, settings_handler=SettingsHandler()):
         self.settings_handler = settings_handler
 
-    def setup(self, apps, root_urlconf):
+    def setup(self, apps, root_urlconf, extra_settings=None):
         import django
         from django.conf import settings
         apps = maybe_list(apps)
         options = self.settings_handler.get_settings_options(root_urlconf)
         options["INSTALLED_APPS"].extend(apps)
+        if extra_settings:
+            options.update(extra_settings)
         settings.configure(**options)
         django.setup()
 
