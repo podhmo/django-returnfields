@@ -8,20 +8,34 @@ DECORATE_KEY = "_drf_decorated"
 
 
 class StaticToken(object):
-    def __init__(self, name, nested, queryname):
+    def __init__(self, translator, name, nested, queryname):
+        self.translator = translator
         self.name = name
         self.nested = nested
         self.queryname = queryname
+
+    def renamed(self, fullname):
+        return self.__class__(self, name=fullname, nested=self.nested, queryname=fullname)
 
     def __call__(self, context):
         return self.queryname
 
 
+class RelatedToken(StaticToken):
+    def __call__(self, context):
+        return ["{}__*".format(self.queryname), "{}__*__*".format(self.queryname)]
+
+
 class DynamicToken(object):
-    def __init__(self, name, nested, fn):
+    def __init__(self, translator, name, nested, queryname, fn):
+        self.translator = translator
         self.name = name
         self.nested = nested
+        self.queryname = queryname
         self.fn = fn
+
+    def renamed(self, fullname):
+        return self.__class__(self, name=fullname, nested=self.nested, queryname=fullname, fn=self.fn)
 
     # with decorators
     def __call__(self, context):
@@ -88,12 +102,14 @@ class NameListTranslator(object):
         self.fields_cache = {}  # <Serializer class> -> (str -> <Field>)
         self.mapping_cache = {}  # <Serializer class> -> (str -> <Token>)
 
-    def translate(self, serializer_class, name_list, context):
+    def translate(self, serializer_class, name_list, context, include_all=False):
         if name_list == self.ALL_LIST:
             name_list = None
         mapping = self.get_mapping(serializer_class)
         if name_list:
             return flatten1(mapping[name](context) for name in name_list if name in mapping)
+        elif include_all:
+            return flatten1(token(context) for token in mapping.values())
         else:
             return flatten1(token(context) for token in mapping.values() if not token.nested)
 
@@ -126,7 +142,7 @@ class NameListTranslator(object):
             # decorated field
             token_factory = self.get_decoration(serializer_class, name, field)
             if token_factory is not None:
-                d[name] = token_factory(name)
+                d[name] = token_factory(self, name)
                 continue
 
             if hasattr(field, "child"):
@@ -134,17 +150,17 @@ class NameListTranslator(object):
             if hasattr(field, "child_relation"):  # ModelField
                 cr = field.child_relation
                 subname = getattr(cr, "lookup_field", None) or cr.queryset.model._meta.pk.name
-                token = StaticToken(name=name, nested=False, queryname="{}__{}".format(name, subname))
+                token = StaticToken(self, name=name, nested=False, queryname="{}__{}".format(name, subname))
                 d[token.queryname] = token
             elif hasattr(field, "_declared_fields"):  # sub Serializer
-                token = StaticToken(name=name, nested=True, queryname=["{}__*".format(name), "{}__*__*".format(name)])
+                token = RelatedToken(self, name=name, nested=True, queryname=name)
                 d[token.name] = token
                 for subname, stoken in self.get_mapping(field.__class__).items():
                     fullname = "{}__{}".format(name, subname)
-                    token = StaticToken(name=fullname, nested=False, queryname=fullname)
-                    d[token.queryname] = token
+                    token = stoken.renamed(fullname)
+                    d[fullname] = token
             else:
-                token = StaticToken(name=name, nested=False, queryname=name)
+                token = StaticToken(self, name=name, nested=False, queryname=name)
                 d[token.queryname] = token
         return d
 
@@ -175,7 +191,7 @@ def set_decoration(serialiezer_method, fn):
 def depends(on=[], nested=False):
     def _depends(field):
         fn = lambda token, context: on
-        factory = lambda name: DynamicToken(name, nested, fn)
+        factory = lambda translator, name: DynamicToken(translator, name, nested, name, fn)
         set_decoration(field, factory)
         return field
     return _depends
@@ -183,6 +199,6 @@ def depends(on=[], nested=False):
 
 def contextual(fn, nested=False):
     def _contextual(field):
-        set_decoration(field, lambda name: DynamicToken(name, nested, fn))
+        set_decoration(field, lambda translator, name: DynamicToken(translator, name, nested, name, fn))
         return field
     return _contextual

@@ -123,11 +123,9 @@ class CollectAllDeepNestedTests(TestCase):
             'users__is_staff',
             'users__is_active',
             'users__date_joined',
-            'users__skills',
             'users__skills__id',
             'users__skills__name',
             'users__skills__user',
-            'users__permissions',
             'users__permissions__id',
             'users__permissions__name',
             'users__permissions__codename',
@@ -138,15 +136,26 @@ class CollectAllDeepNestedTests(TestCase):
         ]
         self.assertEqual(sorted(actual), sorted(expected))
 
+    def test_with_deep_nested2(self):
+        target = self._makeOne()
+        context = {}
 
-class CollectAllDependsDecoratorTests(TestCase):
-    def _makeOne(self):
-        from django_returnfields.optimize import NameListTranslator
-        return NameListTranslator()
+        actual = target.translate(self.GroupSerializer, ["users__permissions"], context)
+        expected = [
+            'users__permissions__*',
+            'users__permissions__*__*',
+        ]
+        self.assertEqual(sorted(actual), sorted(expected))
+
+
+class CollectAllDependsTests(TestCase):
+    def _getTarget(self):
+        from django_returnfields import depends
+        return depends
 
     def setUp(self):
         from .models import User
-        from django_returnfields import depends
+        depends = self._getTarget()
 
         class ForDependsTestUserSerializer(serializers.ModelSerializer):
             class Meta:
@@ -165,31 +174,40 @@ class CollectAllDependsDecoratorTests(TestCase):
                 return ob.username.split(" ", 1)[1]
         self.Serializer = ForDependsTestUserSerializer
 
+    def _makeTranslator(self):
+        from django_returnfields.optimize import NameListTranslator
+        return NameListTranslator()
+
     def test_with_depends_decorator__all(self):
-        target = self._makeOne()
+        translator = self._makeTranslator()
         context = {}
 
-        actual = target.translate(self.Serializer, None, context)
+        actual = translator.translate(self.Serializer, None, context)
         expected = ['id', 'username', 'username']
         self.assertEqual(actual, expected)
 
     def test_with_depends_decorator__not_matched(self):
-        target = self._makeOne()
+        translator = self._makeTranslator()
         context = {}
 
-        actual = target.translate(self.Serializer, ["id"], context)
+        actual = translator.translate(self.Serializer, ["id"], context)
         expected = ['id']
         self.assertEqual(actual, expected)
 
 
-class CollectAllContextualDecoratorTests(TestCase):
-    def _makeOne(self):
+class CollectAllContextualTests(TestCase):
+    def _getTarget(self):
+        from django_returnfields import contextual
+        return contextual
+
+    def _makeTranslator(self):
         from django_returnfields.optimize import NameListTranslator
         return NameListTranslator()
 
     def setUp(self):
         from .models import User
-        from django_returnfields import contextual
+
+        contextual = self._getTarget()
 
         def has_xxx_context(xxx, replaced):
             def check(token, context):
@@ -209,17 +227,74 @@ class CollectAllContextualDecoratorTests(TestCase):
         self.Serializer = ForContextualTestUserSerializer
 
     def test_with_contextual_decorator__deactivated(self):
-        target = self._makeOne()
+        translator = self._makeTranslator()
         context = {}
 
-        actual = target.translate(self.Serializer, None, context)
+        actual = translator.translate(self.Serializer, None, context)
         expected = ['id']
         self.assertEqual(actual, expected)
 
     def test_with_contextual_decorator__activated(self):
-        target = self._makeOne()
+        translator = self._makeTranslator()
         context = {"with_username": True}
 
-        actual = target.translate(self.Serializer, None, context)
+        actual = translator.translate(self.Serializer, None, context)
         expected = ['id', "username"]
+        self.assertEqual(actual, expected)
+
+
+class CollectAllContextualNestedTests(TestCase):
+    def _getTarget(self):
+        from django_returnfields import contextual
+        return contextual
+
+    def _makeTranslator(self):
+        from django_returnfields.optimize import NameListTranslator
+        return NameListTranslator()
+
+    def setUp(self):
+        from .models import User
+        from .serializers import SkillSerializer
+
+        contextual = self._getTarget()
+
+        def has_nested(serializer_class, key_name, default):
+            def _has_nested(token, context):
+                if context.get(key_name, False):
+                    name_list = token.translator.translate(serializer_class, None, context)
+                    return ["{}__{}".format(token.queryname, name) for name in name_list]
+                else:
+                    return default
+            return _has_nested
+
+        class ForContextualTestUserSerializer(serializers.ModelSerializer):
+            skills = serializers.SerializerMethodField()
+
+            class Meta:
+                model = User
+                fields = ('id', 'username', 'skills')
+
+            @contextual(has_nested(SkillSerializer, 'with_skills', default=[]))
+            def get_skills(self, ob):
+                if self.context.get("with_skills", False):
+                    return SkillSerializer(ob.skills, many=True).data
+                else:
+                    return []
+
+        self.Serializer = ForContextualTestUserSerializer
+
+    def test_with_contextual_decorator__deactivated(self):
+        translator = self._makeTranslator()
+        context = {}
+
+        actual = translator.translate(self.Serializer, None, context)
+        expected = ['id', 'username']
+        self.assertEqual(actual, expected)
+
+    def test_with_contextual_decorator__activated(self):
+        translator = self._makeTranslator()
+        context = {"with_skills": True}
+
+        actual = translator.translate(self.Serializer, None, context)
+        expected = ['id', 'username', 'skills__id', 'skills__user__id', 'skills__user__url', 'skills__user__username', 'skills__user__email', 'skills__user__is_staff', 'skills__name']
         self.assertEqual(actual, expected)
