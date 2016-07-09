@@ -56,7 +56,13 @@ class CollectAllNameListTests(TestCase):
         expected = ['id', 'password', 'last_login', 'is_superuser', 'username', 'first_name', 'last_name', 'email', 'is_staff', 'is_active', 'date_joined', 'groups__id', 'user_permissions__id']
         self.assertEqual(actual, expected)
 
-    def test_with_depends_decorator(self):
+
+class CollectAllDependsDecoratorTests(TestCase):
+    def _makeOne(self):
+        from django_returnfields.optimize import NameListTranslator
+        return NameListTranslator()
+
+    def setUp(self):
         from .models import User
         from django_returnfields import depends
 
@@ -75,13 +81,26 @@ class CollectAllNameListTests(TestCase):
             @depends("username")
             def get_last_name(self, ob):
                 return ob.username.split(" ", 1)[1]
+        self.Serializer = ForDependsTestUserSerializer
 
-        actual = self._callFUT(ForDependsTestUserSerializer)
+    def test_with_depends_decorator__all(self):
+        target = self._makeOne()
+        context = {}
+
+        actual = target.translate(self.Serializer, None, context)
         expected = ['id', 'username', 'username']
         self.assertEqual(actual, expected)
 
+    def test_with_depends_decorator__not_matched(self):
+        target = self._makeOne()
+        context = {}
 
-class CollectAllTranslateTests(TestCase):
+        actual = target.translate(self.Serializer, ["id"], context)
+        expected = ['id']
+        self.assertEqual(actual, expected)
+
+
+class CollectAllContextualDecoratorTests(TestCase):
     def _makeOne(self):
         from django_returnfields.optimize import NameListTranslator
         return NameListTranslator()
@@ -107,7 +126,7 @@ class CollectAllTranslateTests(TestCase):
                 return ob.username.split(" ", 1)[0]
         self.Serializer = ForContextualTestUserSerializer
 
-    def test_with_contextual_decorator(self):
+    def test_with_contextual_decorator__deactivated(self):
         target = self._makeOne()
         context = {}
 
@@ -115,7 +134,7 @@ class CollectAllTranslateTests(TestCase):
         expected = ['id']
         self.assertEqual(actual, expected)
 
-    def test_with_contextual_decorator2(self):
+    def test_with_contextual_decorator__activated(self):
         target = self._makeOne()
         context = {"with_username": True}
 

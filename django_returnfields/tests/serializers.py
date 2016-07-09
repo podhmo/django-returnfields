@@ -1,7 +1,6 @@
 # -*- coding:utf-8 -*-
 from rest_framework import serializers
 from .models import Skill, User, Group
-from django_returnfields import depends
 
 
 class UserSerializer(serializers.ModelSerializer):
