@@ -1,3 +1,12 @@
+## how to use this
+
+```bash
+$ python app.py --run-server  # running as server app
+$ python app.py  # access simulation via django client
+```
+
+## output(output of simulation)
+
 listing (empty)
 ```
 request: GET /users/
