@@ -1,0 +1,74 @@
+========================================
+request: GET /users/
+status code: 200
+response: []
+========================================
+request: POST /users/
+status code: 201
+response: {
+  "id": 1,
+  "url": "http://testserver/users/1/",
+  "username": "foo",
+  "email": "",
+  "is_staff": false,
+  "skills": []
+}
+========================================
+request: POST /skills/
+status code: 201
+response: {
+  "id": 1,
+  "user": 1,
+  "name": "magic"
+}
+========================================
+request: POST /skills/
+status code: 201
+response: {
+  "id": 2,
+  "user": 1,
+  "name": "magik"
+}
+========================================
+request: GET /users/1/?format=json
+status code: 200
+response: {
+  "id": 1,
+  "url": "http://testserver/users/1/?format=json",
+  "username": "foo",
+  "email": "",
+  "is_staff": false,
+  "skills": [
+    {
+      "id": 1,
+      "user": 1,
+      "name": "magic"
+    },
+    {
+      "id": 2,
+      "user": 1,
+      "name": "magik"
+    }
+  ]
+}
+========================================
+request: GET /users/1/?format=json&return_fields=username,id
+status code: 200
+response: {
+  "id": 1,
+  "username": "foo"
+}
+========================================
+request: GET /users/1/?format=json&return_fields=username,skills&skip_fields=skills__id,skills__user
+status code: 200
+response: {
+  "username": "foo",
+  "skills": [
+    {
+      "name": "magic"
+    },
+    {
+      "name": "magik"
+    }
+  ]
+}
