@@ -57,6 +57,88 @@ class CollectAllNameListTests(TestCase):
         self.assertEqual(actual, expected)
 
 
+class CollectAllDeepNestedTests(TestCase):
+    def _makeOne(self):
+        from django_returnfields.optimize import NameListTranslator
+        return NameListTranslator()
+
+    def setUp(self):
+        from django.contrib.auth.models import Permission, Group
+        from .models import User, Skill
+        # in django.contrib.auth.models
+        #     permission *-* group, permission *-* user, permission *-* groups
+        # in my tests.models:
+        #     skill *- user
+
+        class ContribPermissionSerializer(serializers.ModelSerializer):
+            class Meta:
+                model = Permission
+                fields = "__all__"
+
+        class SkillSerializer(serializers.ModelSerializer):
+            class Meta:
+                model = Skill
+                fields = "__all__"
+
+        class UserSerializer(serializers.ModelSerializer):
+            skills = SkillSerializer(many=True)
+            permissions = ContribPermissionSerializer(many=True)
+
+            class Meta:
+                model = User
+                fields = "__all__"
+
+        class ContribGroupSerializer(serializers.ModelSerializer):
+            permissions = ContribPermissionSerializer(many=True)
+            users = UserSerializer(many=True)
+
+            class Meta:
+                model = Group
+                fields = "__all__"
+
+        self.PermissionSerializer = ContribPermissionSerializer
+        self.SkillSerializer = SkillSerializer
+        self.UserSerializer = UserSerializer
+        self.GroupSerializer = ContribGroupSerializer
+
+    def test_with_deep_nested(self):
+        target = self._makeOne()
+        context = {}
+
+        actual = target.translate(self.GroupSerializer, None, context)
+        expected = [
+            'id',
+            'name',
+            'permissions__id',
+            'permissions__name',
+            'permissions__codename',
+            'permissions__content_type',
+            'users__id',
+            'users__last_login',
+            'users__is_superuser',
+            'users__username',
+            'users__first_name',
+            'users__last_name',
+            'users__email',
+            'users__is_staff',
+            'users__is_active',
+            'users__date_joined',
+            'users__skills',
+            'users__skills__id',
+            'users__skills__name',
+            'users__skills__user',
+            'users__permissions',
+            'users__permissions__id',
+            'users__permissions__name',
+            'users__permissions__codename',
+            'users__permissions__content_type',
+            'users__password',
+            'users__groups__id',
+            'users__user_permissions__id',
+        ]
+        self.assertEqual(sorted(actual), sorted(expected))
+
+
 class CollectAllDependsDecoratorTests(TestCase):
     def _makeOne(self):
         from django_returnfields.optimize import NameListTranslator
