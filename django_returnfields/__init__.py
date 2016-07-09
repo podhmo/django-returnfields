@@ -2,7 +2,6 @@
 import logging
 import warnings
 from collections import OrderedDict
-from rest_framework.serializers import ListSerializer
 from .structures import AgainstDeepcopyWrapper
 from .constants import ALL
 from .optimize import QueryOptimizer
@@ -189,6 +188,8 @@ _default_restriction = restriction_factory(include_key=INCLUDE_KEY, exclude_key=
 
 
 def serializer_factory(serializer_class, restriction=_default_restriction):
+    from rest_framework.serializers import ListSerializer
+
     k = (serializer_class, False, restriction.__hash__())
     if k in _cache:
         return _cache[k]
