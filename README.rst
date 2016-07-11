@@ -90,6 +90,7 @@ e.g.
   GET /users/1/?format=json&return_fields=username,skills&skip_fields=skills__id,skills__user&aggressive=1
 
 
+`aggressive` option is not only using defer and only, but also semi-automatic join or prefetching (TODO: introduction)
 
 example
 ----------------------------------------
