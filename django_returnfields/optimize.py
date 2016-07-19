@@ -14,8 +14,8 @@ class StaticToken(object):
         self.nested = nested
         self.queryname = queryname
 
-    def renamed(self, fullname):
-        return self.__class__(self, name=fullname, nested=self.nested, queryname=fullname)
+    def renamed(self, fullname, fullqueryname):
+        return self.__class__(self, name=fullname, nested=self.nested, queryname=fullqueryname)
 
     def __call__(self, context):
         return self.queryname
@@ -29,8 +29,8 @@ class RelatedToken(object):
         self.queryname = queryname
         self.mapping = mapping
 
-    def renamed(self, fullname):
-        return self.__class__(self, name=fullname, nested=self.nested, queryname=fullname, mapping=self.mapping)
+    def renamed(self, fullname, fullqueryname):
+        return self.__class__(self, name=fullname, nested=self.nested, queryname=fullqueryname, mapping=self.mapping)
 
     def __call__(self, context):
         return ["{}__{}".format(self.queryname, t(context)) for t in self.mapping.values()]
@@ -44,8 +44,8 @@ class DynamicToken(object):
         self.queryname = queryname
         self.fn = fn
 
-    def renamed(self, fullname):
-        return self.__class__(self, name=fullname, nested=self.nested, queryname=fullname, fn=self.fn)
+    def renamed(self, fullname, fullqueryname):
+        return self.__class__(self, name=fullname, nested=self.nested, queryname=fullqueryname, fn=self.fn)
 
     # with decorators
     def __call__(self, context):
@@ -141,6 +141,13 @@ class NameListTranslator(object):
     def get_decoration(self, serializer_class, name, field):
         return get_decoration(serializer_class, name, field)
 
+    def _get_queryname(self, field, name):
+        if field.source and field.source != "*":
+            # field.source == "*" when field extends HyperlinkedIdentityField.
+            return field.source
+        else:
+            return name
+
     def _get_mapping(self, serializer_class):
         fields = self.get_fields(serializer_class)
         d = OrderedDict()
@@ -159,20 +166,25 @@ class NameListTranslator(object):
                 field = field.child  # ListSerialier -> Serializer
             if hasattr(field, "child_relation"):  # ModelField
                 cr = field.child_relation
+                queryname = self._get_queryname(field, name)
                 subname = getattr(cr, "lookup_field", None) or cr.queryset.model._meta.pk.name
-                token = StaticToken(self, name=name, nested=False, queryname="{}__{}".format(name, subname))
-                d[token.queryname] = token
+                fullqueryname = "{}__{}".format(queryname, subname)
+                fullname = "{}__{}".format(name, subname)
+                token = StaticToken(self, name=name, nested=False, queryname=fullqueryname)
+                d[fullname] = token
             elif hasattr(field, "_declared_fields"):  # sub Serializer
                 mapping = self.get_mapping(field.__class__)
+                queryname = self._get_queryname(field, name)
+                token = RelatedToken(self, name=name, nested=True, queryname=queryname, mapping=mapping)
                 for subname, stoken in mapping.items():
-                    fullname = "{}__{}".format(name, subname)
-                    token = stoken.renamed(fullname)
-                    d[fullname] = token
-                token = RelatedToken(self, name=name, nested=True, queryname=name, mapping=mapping)
-                d[token.name] = token
+                    fullqueryname = "{}__{}".format(token.queryname, stoken.queryname)
+                    fullname = "{}__{}".format(token.name, subname)
+                    d[fullname] = stoken.renamed(fullname, fullqueryname)
+                d[name] = token
             else:
-                token = StaticToken(self, name=name, nested=False, queryname=name)
-                d[token.queryname] = token
+                queryname = self._get_queryname(field, name)
+                token = StaticToken(self, name=queryname, nested=False, queryname=queryname)
+                d[name] = token
         return d
 
 

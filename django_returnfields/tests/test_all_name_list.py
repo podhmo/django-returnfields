@@ -57,6 +57,44 @@ class CollectAllNameListTests(TestCase):
         self.assertEqual(actual, expected)
 
 
+class CollectAllWithSourceOptionTests(TestCase):
+    def _makeOne(self):
+        from django_returnfields.optimize import NameListTranslator
+        return NameListTranslator()
+
+    def setUp(self):
+        from .models import User, Skill
+
+        class AnotherSkillSerializer(serializers.ModelSerializer):
+            fullname = serializers.CharField(source="name")
+
+            class Meta:
+                model = Skill
+                fields = ("id", "fullname")
+
+        class AnotherUserSerializer(serializers.ModelSerializer):
+            fullname = serializers.CharField(source="username")
+            my_skills = AnotherSkillSerializer(many=True, source="skills")
+
+            class Meta:
+                model = User
+                fields = ("id", "fullname", "my_skills")
+        self.Serializer = AnotherUserSerializer
+
+    def test_all_list(self):
+        target = self._makeOne()
+        actual = target.all_name_list(self.Serializer)
+        expected = ['id', 'username', 'skills__id', 'skills__name']
+        self.assertEqual(actual, expected)
+
+    def test_translate(self):
+        target = self._makeOne()
+        name_list = ['my_skills__fullname', 'fullname']
+        actual = target.translate(self.Serializer, name_list, {})
+        expected = ["skills__name", "username"]
+        self.assertEqual(actual, expected)
+
+
 class CollectAllDeepNestedTests(TestCase):
     def _makeOne(self):
         from django_returnfields.optimize import NameListTranslator
