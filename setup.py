@@ -16,6 +16,7 @@ except IOError:
 
 
 install_requires = [
+    'django >= 1.9',
     'djangorestframework',
     'django-aggressivequery'
 ]
@@ -68,6 +69,7 @@ setup(name='django-returnfields',
       classifiers=[
           "Programming Language :: Python",
           "Programming Language :: Python :: Implementation :: CPython",
+          "Programming Language :: Python :: 3 :: Only",
           'Framework :: Django',
           'License :: OSI Approved :: BSD License',
       ],
