@@ -1,13 +1,9 @@
 class AgainstDeepcopyWrapper(object):
-    def __init__(self, value, once=True):
+    def __init__(self, value):
         self.value = value
-        self.once = once
 
     def __deepcopy__(self, m):
-        if self.once:
-            return self.unwrap()
-        else:
-            return self
+        return self
 
     def unwrap(self):
         return self.value
