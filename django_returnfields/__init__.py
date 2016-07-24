@@ -199,16 +199,12 @@ def serializer_factory(serializer_class, restriction=_default_restriction):
     class ReturnFieldsSerializer(serializer_class):
         # override
         def __init__(self, instance=None, *args, **kwargs):
-            # print(">>>>> start", type(instance), id(instance), self.__class__.__name__)
-            # print(kwargs, "@@@")
             context = kwargs.get("context")
             if context and instance and "_many" not in context and restriction.is_active(context):
                 restriction.setup(context, many=False)
-                print("&&&&&", id(self), id(instance), type(instance))
                 if restriction.can_optimize(context):
                     instance = restriction.query_optimizer.optimize_query(context, instance, self.__class__)
                     instance = instance.to_queryset().first()
-                print("&&&&&", id(self), id(instance), type(instance))
             super(ReturnFieldsSerializer, self).__init__(instance, *args, **kwargs)
 
         @classmethod
@@ -272,8 +268,6 @@ def list_serializer_factory(serializer_class, restriction=_default_restriction):
     class ReturnFieldsListSerializer(serializer_class):
         # override
         def __init__(self, instance=None, *args, **kwargs):
-            # print(">>>>> start list", type(instance), id(instance), self.__class__.__name__)
-            # print(kwargs, "@@@")
             context = kwargs.get("context")
             if context and restriction.is_active(context):
                 child = kwargs["child"]
