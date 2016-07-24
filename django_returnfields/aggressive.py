@@ -1,4 +1,8 @@
+import logging
 from django_aggressivequery import from_queryset
+
+
+logger = logging.getLogger(__name__)
 
 
 def aggressive_query(qs, name_list, skip_list=None):
@@ -16,5 +20,12 @@ def revive_query(query_or_extraction):
         pks = [x.pk for x in query_or_extraction]
         # order by is dropped..
         return query_or_extraction[0].__class__.objects.filter(pk__in=pks), True
+    elif hasattr(query_or_extraction, "_meta"):
+        ob = query_or_extraction
+        pk = ob._meta.pk.name
+        try:
+            return ob.__class__.objects.filter(**{pk: getattr(ob, pk)}), True
+        except Exception:
+            logger.warning("unsupported type. ignored", exc_info=True)
     else:
         return query_or_extraction, False

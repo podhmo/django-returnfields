@@ -119,12 +119,20 @@ class AggressiveFeatureTests(APITestCase):
     # see: ./url:GroupUserViewSet.serializer_class
     @classmethod
     def setUpTestData(cls):
-        from .models import Group
+        from .models import Group, Permission
         user = User.objects.create_superuser('admin', 'myemail@test.com', '')
         group = Group.objects.create(name="magic")
+        group2 = Group.objects.create(name="magik")
+        group3 = Group.objects.create(name="magick")
+        Permission.objects.create(group=group)
+        Permission.objects.create(group=group)
+        Permission.objects.create(group=group2)
         group.user_set.add(user)
         group.user_set.add(User.objects.create_superuser('another', 'myemail2@test.com', ''))
+        group2.user_set.add(user)
+        group3.user_set.add(user)
         group.save()
+        group2.save()
 
     def test_include__aggressive(self):
         path = "/api/group_users/?return_fields=id&aggressive=1"
@@ -181,6 +189,13 @@ class AggressiveFeatureTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK, msg=extract_error_message(response))
         self.assertEqual(set(response.data[0].keys()), {"groups"})
         self.assertEqual(set(response.data[0]["groups"][0].keys()), {"id", "name"})
+
+    def test_detail__aggressive(self):
+        path = "/api/group_users/1/?aggressive=1"
+        with self.assertNumQueries(4):  # 3 = user -> groups -> permissions
+            response = self.client.get(path, format="json")
+            self.assertEqual(response.status_code, status.HTTP_200_OK, msg=extract_error_message(response))
+            # todo: response check
 
 
 class PaginatedViewTests(APITestCase):
