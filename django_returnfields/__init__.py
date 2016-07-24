@@ -2,7 +2,6 @@
 import logging
 import warnings
 from collections import OrderedDict
-from .structures import AgainstDeepcopyWrapper
 from .constants import ALL
 from .optimize import QueryOptimizer
 from .optimize import contextual, depends  # NOQA
@@ -251,27 +250,15 @@ def list_serializer_factory(serializer_class, restriction=_default_restriction):
 
     class ReturnFieldsListSerializer(serializer_class):
         # override
-        def __new__(cls, instance=None, **kwargs):
-            # print(">>>>> start", type(instance), id(instance))
+        def __init__(self, instance=None, *args, **kwargs):
+            # print(">>>>> start", type(self.instance), id(self.instance))
             context = kwargs.get("context")
-            if context:
-                if not restriction.is_active(context):
-                    return serializer_class(instance, **kwargs)
+            if context and restriction.is_active(context):
+                child = kwargs["child"]
                 restriction.setup(context, many=True)
                 if restriction.can_optimize(context):
-                    instance = restriction.query_optimizer.optimize_query(context, instance, kwargs["child"].__class__)
-                    # print(">>>>> changed", type(instance), id(instance))
-                    # xxx: a constructor of ListSerializer calling deepcopy
-                    instance = AgainstDeepcopyWrapper(instance)
-                    # print(">>>>> wrapped", type(instance), id(instance))
-            serializer = super(ReturnFieldsListSerializer, cls).__new__(cls, instance, **kwargs)
-            return serializer
-
-        def __init__(self, *args, **kwargs):
-            super(ReturnFieldsListSerializer, self).__init__(*args, **kwargs)
-            # xxx: rest_framework.fields:Field.__new__ is not passing arguments, so.
-            if self._args and hasattr(self._args[0], "unwrap"):
-                self.instance = self._args[0].unwrap()
+                    instance = restriction.query_optimizer.optimize_query(context, instance, child.__class__)
+            super(ReturnFieldsListSerializer, self).__init__(instance, *args, **kwargs)
 
         # override
         def to_representation(self, data):
