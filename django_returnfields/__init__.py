@@ -200,7 +200,7 @@ def serializer_factory(serializer_class, restriction=_default_restriction):
         # override
         def __init__(self, instance=None, *args, **kwargs):
             context = kwargs.get("context")
-            if context and instance and "_many" not in context and restriction.is_active(context):
+            if context and instance is not None and "_many" not in context and restriction.is_active(context):
                 restriction.setup(context, many=False)
                 if restriction.can_optimize(context):
                     instance = restriction.query_optimizer.optimize_query(context, instance, self.__class__)
