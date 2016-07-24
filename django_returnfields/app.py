@@ -32,7 +32,14 @@ default_settings = dict(
         'default': {
             'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
         }
-    }
+    },
+    TEMPLATES=[
+        {
+            'BACKEND': 'django.template.backends.django.DjangoTemplates',
+            'DIRS': [],
+            'APP_DIRS': True
+        },
+    ]
 )
 
 
@@ -109,7 +116,8 @@ class App(object):
 
     def run_server(self, port=8000):
         from django.core.management.commands.runserver import Command
-        return Command().execute(addrport=str(port))
+        default = dict(no_color=False, use_ipv6=False, use_reloader=False, use_threading=False)
+        return Command().execute(addrport=str(port), **default)
 
     def run_client(self, callback):
         client = Client()

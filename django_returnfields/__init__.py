@@ -202,11 +202,13 @@ def serializer_factory(serializer_class, restriction=_default_restriction):
             # print(">>>>> start", type(instance), id(instance), self.__class__.__name__)
             # print(kwargs, "@@@")
             context = kwargs.get("context")
-            if context and "_many" not in context and restriction.is_active(context):
+            if context and instance and "_many" not in context and restriction.is_active(context):
                 restriction.setup(context, many=False)
+                print("&&&&&", id(self), id(instance), type(instance))
                 if restriction.can_optimize(context):
                     instance = restriction.query_optimizer.optimize_query(context, instance, self.__class__)
                     instance = instance.to_queryset().first()
+                print("&&&&&", id(self), id(instance), type(instance))
             super(ReturnFieldsSerializer, self).__init__(instance, *args, **kwargs)
 
         @classmethod
