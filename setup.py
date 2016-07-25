@@ -63,7 +63,7 @@ class MyTest(TestCommand):
 
 
 setup(name='django-returnfields',
-      version='0.3.1',
+      version='0.3.2',
       description='adding restriction of your api\'s return fields, in restframework',
       long_description=README + '\n\n' + CHANGES,
       classifiers=[

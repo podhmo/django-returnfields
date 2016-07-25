@@ -1,3 +1,8 @@
+0.3.2
+
+- simplify
+- bug fix, a optimization is not worked with a serializer has many=False option.
+
 0.3.1
 
 - supporting source option of django restframework's field
