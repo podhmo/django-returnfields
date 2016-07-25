@@ -50,13 +50,7 @@ class ArticleFullSetSerializer(ArticleSerializer):
     comments = CommentFullSetSerializer(many=True)
     categories = CategorySerializer(many=True)
 
-    class Meta(ArticleSerializer.Meta):
-        fields = ["comments", "categories"] + list(ArticleSerializer._declared_fields.keys())
-
 
 @serializer_factory
 class BlogFullSetSerializer(BlogSerializer):
     articles = ArticleFullSetSerializer(many=True)
-
-    class Meta(BlogSerializer.Meta):
-        fields = ["articles"] + list(BlogSerializer._declared_fields.keys())
